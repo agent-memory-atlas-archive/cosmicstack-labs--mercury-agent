@@ -93,6 +93,8 @@ export function getManual(): string {
     ['mercury service install', 'Install as system service (auto-start)'],
     ['mercury service uninstall', 'Uninstall system service'],
     ['mercury service status', 'Show system service status'],
+    ['mercury uninstall', 'Fully remove Mercury (runtime, service, npm/binary artifacts)'],
+    ['mercury uninstall --purge-data', 'Also delete all Mercury data (~/.mercury)'],
     ['mercury --verbose', 'Start with debug logging on stderr'],
   ];
 

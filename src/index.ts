@@ -70,6 +70,7 @@ import { SkillLoader } from './skills/loader.js';
 import { registerSkillsCommand } from './skills/cli.js';
 import { getManual } from './utils/manual.js';
 import { startBackground, stopDaemon, showLogs, getDaemonStatus, registerRuntimeProcess, releaseRuntimeProcess, restartDaemon, tryAutoDaemonize, isStandaloneBinary, getForegroundRuntimeStatus, stopForegroundRuntime } from './cli/daemon.js';
+import { runUninstall } from './cli/uninstall.js';
 import { runAttach } from './cli/attach.js';
 import { installService, uninstallService, showServiceStatus, isServiceInstalled } from './cli/service.js';
 import { runWithWatchdog } from './cli/watchdog.js';
@@ -4501,6 +4502,17 @@ serviceCmd
     }
 
     console.log('');
+  });
+
+program
+  .command('uninstall')
+  .description('Fully remove Mercury from this machine (runtime, service, npm/binary artifacts)')
+  .option('--purge-data', 'Also delete all Mercury data (~/.mercury: memory, sessions, soul, keys) without asking')
+  .option('--keep-data', 'Keep all Mercury data (skips the confirmation prompt)')
+  .action(async (opts) => {
+    await runUninstall({
+      purgeData: opts.purgeData ? true : opts.keepData ? false : undefined,
+    });
   });
 
 program

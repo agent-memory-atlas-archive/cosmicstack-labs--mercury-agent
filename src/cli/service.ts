@@ -116,6 +116,56 @@ export function uninstallService(): void {
   }
 }
 
+/**
+ * Non-exiting service teardown for the full `mercury uninstall` flow. Returns
+ * what happened instead of printing/exiting, so the uninstaller can fold it
+ * into its own summary. `removed` false with no hint means "was not installed".
+ */
+export function teardownService(): { removed: boolean; path?: string; hint?: string } {
+  const platform = process.platform;
+
+  if (isTermux()) return { removed: false, hint: 'Termux: no system service — nothing to remove' };
+
+  if (platform === 'darwin') {
+    const plistPath = join(homedir(), 'Library', 'LaunchAgents', 'com.cosmicstack.mercury.plist');
+    if (!existsSync(plistPath)) return { removed: false };
+    try { execSync(`launchctl unload ${plistPath}`, { stdio: 'pipe' }); } catch {}
+    try {
+      unlinkSync(plistPath);
+      return { removed: true, path: plistPath };
+    } catch {
+      return { removed: false, hint: `Remove manually: rm ${plistPath}` };
+    }
+  }
+
+  if (platform === 'linux') {
+    const servicePath = join(homedir(), '.config', 'systemd', 'user', 'mercury.service');
+    if (!existsSync(servicePath)) return { removed: false };
+    try {
+      execSync('systemctl --user stop mercury.service', { stdio: 'pipe' });
+      execSync('systemctl --user disable mercury.service', { stdio: 'pipe' });
+    } catch {}
+    try {
+      unlinkSync(servicePath);
+      try { execSync('systemctl --user daemon-reload', { stdio: 'pipe' }); } catch {}
+      return { removed: true, path: servicePath };
+    } catch {
+      return { removed: false, hint: `Remove manually: rm ${servicePath}` };
+    }
+  }
+
+  if (platform === 'win32') {
+    try {
+      execSync(`schtasks /delete /tn "${WIN_TASK_NAME}" /f`, { stdio: 'pipe', shell: 'cmd.exe' });
+      return { removed: true, path: `scheduled task ${WIN_TASK_NAME}` };
+    } catch {
+      return { removed: false };
+    }
+  }
+
+  return { removed: false, hint: `Unsupported platform for service teardown: ${platform}` };
+}
+
 export function showServiceStatus(): void {
   const platform = process.platform;
 
