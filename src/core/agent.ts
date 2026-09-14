@@ -94,7 +94,7 @@ import { whatsNewText } from '../utils/whats-new.js';
  * fullStream and inserts paragraph breaks at step boundaries so each
  * step's narration reads as its own block.
  */
-function stepAwareTextStream(
+export function stepAwareTextStream(
   fullStream: AsyncIterable<any>,
   onReasoning?: (preview: string | null) => void,
 ): AsyncIterable<string> {
@@ -103,7 +103,11 @@ function stepAwareTextStream(
     let sawTextInStep = false;
     let reasoningBuf = '';
     for await (const part of fullStream) {
-      if (part.type === 'step-start') {
+      // Step boundary: AI SDK 6 emits 'start-step' (the v4/v5 name was
+      // 'step-start'). Matching only the old name meant the separator never
+      // fired — every step's narration ran into the next as word salad
+      // ("…in this project.Found the situation…") in the live tail.
+      if (part.type === 'start-step' || part.type === 'step-start') {
         if (!firstStep && sawTextInStep) yield '\n\n';
         firstStep = false;
         sawTextInStep = false;
