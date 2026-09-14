@@ -80,11 +80,11 @@ const MIMO_TOKEN_PLAN_PREFERRED_MODELS = MIMO_PREFERRED_MODELS;
 const OPENAI_COMPAT_PREFERRED_MODELS = [] as const;
 
 const CHATGPT_WEB_PREFERRED_MODELS = [
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
   'gpt-5.5',
-  'gpt-5.4',
-  'gpt-5.4-mini',
-  'gpt-5.3-codex',
-  'gpt-5.2',
+  'gpt-6-astra',
+  'gpt-5.6-luna',
 ] as const;
 
 const GITHUB_COPILOT_PREFERRED_MODELS = [

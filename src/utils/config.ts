@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { config as loadDotenv } from 'dotenv';
+import { logger } from './logger.js';
 import type { SignalAccessUser, SignalPendingRequest, DiscordAccessUser, DiscordPendingRequest, SlackAccessUser, SlackPendingRequest } from '../types/channel.js';
 import {
   LEGACY_SEED_API_URL,
@@ -446,19 +447,52 @@ export function loadConfig(): MercuryConfig {
     const raw = readFileSync(CONFIG_PATH, 'utf-8');
     const fileConfig = parseYaml(raw) as Partial<MercuryConfig>;
     const defaults = getDefaultConfig();
-    return normalizeCloudConfig(migrateLegacyDiscordAccess(
-      migrateLegacyOllamaLocalBaseUrl(
-        migrateLegacyOllamaCloudBaseUrl(
-          migrateLegacySignalAccess(
-            migrateLegacyTelegramAccess(deepMerge(defaults, fileConfig)),
+    return normalizeCloudConfig(migrateLegacyChatGPTModel(
+      migrateLegacyDiscordAccess(
+        migrateLegacyOllamaLocalBaseUrl(
+          migrateLegacyOllamaCloudBaseUrl(
+            migrateLegacySignalAccess(
+              migrateLegacyTelegramAccess(deepMerge(defaults, fileConfig)),
+            ),
           ),
         ),
       ),
     ));
   }
-  return normalizeCloudConfig(migrateLegacyDiscordAccess(
-    migrateLegacyTelegramAccess(getDefaultConfig()),
+  return normalizeCloudConfig(migrateLegacyChatGPTModel(
+    migrateLegacyDiscordAccess(
+      migrateLegacyTelegramAccess(getDefaultConfig()),
+    ),
   ));
+}
+
+/**
+ * 2026-09: OpenAI's Codex-for-ChatGPT backend now validates the model slug
+ * against the account's LIVE entitlements and rejects everything else with
+ * HTTP 400 "The 'X' model is not supported when using Codex with a ChatGPT
+ * account." The old catalog fetched the ChatGPT web-app list
+ * (/backend-api/models), whose hyphenated slugs (e.g. `gpt-5-6-thinking`) are
+ * ALL rejected — authenticated users could not chat. Migrate any
+ * non-entitled chatgptWeb model to the current recommended Codex slug.
+ */
+const CHATGPT_CODEX_MODEL_SLUGS = [
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
+  'gpt-5.5',
+  'gpt-6-astra',
+  'gpt-reserve',
+] as const;
+
+const DEFAULT_CHATGPT_CODEX_MODEL = 'gpt-5.6-sol';
+
+export function migrateLegacyChatGPTModel(config: MercuryConfig): MercuryConfig {
+  const chatgpt = config.providers?.chatgptWeb;
+  if (chatgpt?.enabled && !((CHATGPT_CODEX_MODEL_SLUGS as readonly string[]).includes(chatgpt.model))) {
+    logger.warn({ staleModel: chatgpt.model, replacement: DEFAULT_CHATGPT_CODEX_MODEL }, 'chatgptWeb model not entitled on the Codex backend — migrating');
+    chatgpt.model = DEFAULT_CHATGPT_CODEX_MODEL;
+  }
+  return config;
 }
 
 export function normalizeCloudConfig(config: MercuryConfig): MercuryConfig {

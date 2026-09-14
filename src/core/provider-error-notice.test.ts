@@ -31,6 +31,15 @@ describe('whitelabelProviderError', () => {
     expect(whitelabelProviderError({ message: 'fetch failed: ECONNRESET' })).toContain('server error or network timeout');
   });
 
+  it('surfaces the Codex usage-limit reset time', () => {
+    const out = whitelabelProviderError({
+      message: 'The usage limit has been reached',
+      responseBody: '{"error":{"type":"usage_limit_reached","resets_at":1789387519}}',
+    });
+    expect(out).toContain('Usage limit reached');
+    expect(out).toContain('resets');
+  });
+
   it('keeps unknown errors concise (first line, no stack)', () => {
     const out = whitelabelProviderError({ message: 'weird provider quirk\n    at deep stack frame\n    more frames' });
     expect(out).toBe('weird provider quirk');
@@ -57,6 +66,28 @@ describe('durable fallback notices', () => {
     // The per-failure line names provider + whitelabeled reason + next hop.
     expect(cliSrc).toContain('sendSystemNotice');
     expect(agentCliWiring()).toBe(true);
+  });
+
+  it('config: stale chatgptWeb slugs migrate to the entitled Codex slug', async () => {
+    const { migrateLegacyChatGPTModel } = await import('../utils/config.js');
+
+    // The exact slug the old catalog produced — rejected by the codex backend.
+    const stale = migrateLegacyChatGPTModel({
+      providers: { chatgptWeb: { name: 'chatgptWeb', enabled: true, apiKey: '', baseUrl: '', model: 'gpt-5-6-thinking' } },
+    } as any);
+    expect(stale.providers.chatgptWeb.model).toBe('gpt-5.6-sol');
+
+    // Already-entitled models stay untouched.
+    const current = migrateLegacyChatGPTModel({
+      providers: { chatgptWeb: { name: 'chatgptWeb', enabled: true, apiKey: '', baseUrl: '', model: 'gpt-5.5' } },
+    } as any);
+    expect(current.providers.chatgptWeb.model).toBe('gpt-5.5');
+
+    // Disabled provider is not migrated.
+    const disabled = migrateLegacyChatGPTModel({
+      providers: { chatgptWeb: { name: 'chatgptWeb', enabled: false, apiKey: '', baseUrl: '', model: 'gpt-5-6-thinking' } },
+    } as any);
+    expect(disabled.providers.chatgptWeb.model).toBe('gpt-5-6-thinking');
   });
 });
 

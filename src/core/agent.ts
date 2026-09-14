@@ -423,6 +423,12 @@ export function whitelabelProviderError(err: any): string {
   if (/403|forbidden|permission/i.test(combined)) {
     return 'The provider refused the request (permissions/quota)';
   }
+  // OpenAI Codex usage limit: the error body carries a reset timestamp —
+  // surface it, the user needs to know when the plan window reopens.
+  const resetsAt = Number((err as any)?.resets_at ?? /"resets_at":\s*(\d+)/.exec(body)?.[1]);
+  if (Number.isFinite(resetsAt) && resetsAt > 0) {
+    return `Usage limit reached on this plan — resets ${new Date(resetsAt * 1000).toLocaleTimeString()}`;
+  }
   if (/429|rate limit|too many requests/i.test(combined)) {
     return 'Rate limited — too many requests right now';
   }
