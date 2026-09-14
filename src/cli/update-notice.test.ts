@@ -80,15 +80,26 @@ describe('update-notice (graceful, once-per-version)', () => {
 });
 
 describe('/whatsnew content', () => {
-  it('renders curated highlights for a published version', () => {
+  it('renders action-grouped sections (Added / Updated / Fixed) for a published version', () => {
     const text = whatsNewText('1.2.9');
-    expect(text).toContain("**What's new in v1.2.9**");
+    expect(text).toContain("**Mercury v1.2.9 — what's new**");
+    expect(text).toContain('**Added**');
     expect(text).toContain('• **Progressive streaming**');
+    expect(text).toContain('**Updated**');
+    expect(text).toContain('**Fixed**');
   });
 
-  it('falls back to the releases link for unknown versions', () => {
+  it('prints the release-notes URL at the bottom (exact tag + all releases)', () => {
+    const text = whatsNewText('1.2.9');
+    const lines = text.split('\n');
+    expect(lines[lines.length - 2]).toBe('Release notes: https://github.com/cosmicstack-labs/mercury-agent/releases/tag/v1.2.9');
+    expect(lines[lines.length - 1]).toBe('All releases:  https://github.com/cosmicstack-labs/mercury-agent/releases');
+  });
+
+  it('falls back to the release-notes links for unknown versions', () => {
     const text = whatsNewText('9.9.9');
-    expect(text).toContain('releases');
+    expect(text).toContain('not published yet');
+    expect(text).toContain('releases/tag/v9.9.9');
   });
 });
 

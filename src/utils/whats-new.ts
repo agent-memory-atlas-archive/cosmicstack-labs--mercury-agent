@@ -1,40 +1,71 @@
 /**
- * Curated "what's new" highlights per release, shown by the `/whatsnew`
- * chat command. Keep entries to a handful of user-facing bullets — this is
- * read by humans, not changelog archivists; the exhaustive list lives in
- * CHANGELOG.md and on the releases page.
+ * "What's new" for the `/whatsnew` chat command — curated, action-grouped
+ * highlights per release (Added / Updated / Fixed), never the exhaustive
+ * list: the full notes live in CHANGELOG.md and on the releases page, whose
+ * exact-tag URL is printed at the bottom so users can check more.
+ *
+ * Content discipline: only user-facing actions performed in that release,
+ * stated accurately — no invented features, no marketing fluff.
  */
-const WHATS_NEW: Record<string, string[]> = {
-  '1.2.9': [
-    '**Progressive streaming** — Mercury Code now builds the document in native scrollback while it streams; you watch sections appear styled as they finish, instead of a wall of newest lines.',
-    '**End-of-task summary** — what was done, how many files changed (top 5 listed), and suggested next steps in the completion banner.',
-    '**Contextual status words** — the spinner says "Painting the UI" or "Hunting the bug" based on your request. Zero LLM tokens.',
-    '**Chat → Mercury Code hand-off** — normal chat asks once when a task looks like coding work; your choice is remembered per session.',
-    '**Provider fallback visibility** — expired token? You now see a respectful one-line notice naming the provider, the reason, and which route the task continues on.',
-    '`mercury code` launches the coding TUI straight from the terminal; `mercury uninstall` removes everything cleanly.',
-  ],
+interface ReleaseHighlights {
+  added?: string[];
+  updated?: string[];
+  fixed?: string[];
+}
+
+const WHATS_NEW: Record<string, ReleaseHighlights> = {
+  '1.2.9': {
+    added: [
+      '**Progressive streaming** — Mercury Code builds the document in native scrollback while it streams; sections appear styled as they finish instead of a wall of newest lines.',
+      '**End-of-task summary** — what was done, how many files changed (top 5 listed), and suggested next steps in the completion banner.',
+      '**Contextual status words** — the spinner says "Painting the UI" or "Hunting the bug" based on your request. Zero LLM tokens.',
+      '**Chat → Mercury Code hand-off** — normal chat asks once when a task looks like coding work; your choice is remembered per session.',
+      '**Provider fallback visibility** — a respectful one-line notice names the failed provider, the reason, and which route the task continues on.',
+      '`mercury code [dir]` launches the coding TUI from the terminal; `mercury uninstall` removes everything cleanly.',
+      '`/whatsnew` and `/update ignore` commands.',
+    ],
+    updated: [
+      'ChatGPT Web provider now resolves the account\'s live-entitled Codex model slugs (the backend rejects everything else with HTTP 400).',
+      'Ink patched: a live frame taller than the terminal is bottom-trimmed instead of erasing the entire scrollback and re-dumping the transcript.',
+    ],
+    fixed: [
+      'Long-conversation rerender storm — the scrollbar no longer jumps to the top and native scrolling works during streams.',
+      'The Mercury Code research-mode prompt no longer fires (its questions were pure friction there).',
+    ],
+  },
 };
 
-const RELEASES_URL = 'https://github.com/cosmicstack-labs/mercury-agent/releases';
+const REPO_RELEASES_URL = 'https://github.com/cosmicstack-labs/mercury-agent/releases';
 
-/** Markdown text for `/whatsnew` — falls back to the releases link for unknown versions. */
+/** Markdown text for `/whatsnew` — only the action groups that have entries. */
 export function whatsNewText(currentVersion: string): string {
   const version = currentVersion.replace(/^v/, '');
   const highlights = WHATS_NEW[version];
-
   const lines: string[] = [];
-  if (highlights && highlights.length > 0) {
-    lines.push(`**What's new in v${version}**`);
+
+  if (highlights) {
+    lines.push(`**Mercury v${version} — what's new**`);
     lines.push('');
-    for (const item of highlights) lines.push(`• ${item}`);
-    lines.push('');
-    lines.push('Exhaustive notes: `CHANGELOG.md` in the install directory.');
+    const sections: Array<[string, string[] | undefined]> = [
+      ['Added', highlights.added],
+      ['Updated', highlights.updated],
+      ['Fixed', highlights.fixed],
+    ];
+    for (const [title, items] of sections) {
+      if (!items || items.length === 0) continue;
+      lines.push(`**${title}**`);
+      for (const item of items) lines.push(`• ${item}`);
+      lines.push('');
+    }
   } else {
     lines.push(`**Mercury v${version}**`);
     lines.push('');
-    lines.push('Curated highlights for this version are not published yet — the full release notes live here:');
+    lines.push('Curated highlights for this version are not published yet.');
+    lines.push('');
   }
-  lines.push('');
-  lines.push(`All releases: https://github.com/cosmicstack-labs/mercury-agent/releases`);
+
+  // Release notes: exact tag when we know it, releases page always.
+  lines.push(`Release notes: ${REPO_RELEASES_URL}/tag/v${version}`);
+  lines.push(`All releases:  ${REPO_RELEASES_URL}`);
   return lines.join('\n');
 }
