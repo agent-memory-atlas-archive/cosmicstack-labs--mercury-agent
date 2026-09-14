@@ -7,13 +7,12 @@ const files = (n: number) =>
   Array.from({ length: n }, (_, i) => ({ path: `src/file-${i}.ts`, added: 10 + i, removed: i }));
 
 /**
- * End-of-task summary in Mercury Code: after a heavy job the banner carries a
- * short markdown summary — what was done (a few bullets), the NUMBER of files
- * changed with at most TASK_SUMMARY_FILE_LIMIT paths listed, and the next
- * steps the developer might need to take.
+ * End-of-task summary in Mercury Code: files first (the developer's top
+ * question is "what changed?"), then what was done, then the next steps.
+ * A general chat turn that mutated no files carries no Changes section at all.
  */
 describe('Mercury Code end-of-task summary', () => {
-  it('lists what was done, the file count, and next steps', () => {
+  it('lists Changes at the top with inline paths, then what was done, then next steps', () => {
     const summary = buildTaskSummary({
       fileChanges: [
         { path: 'src/a.ts', added: 45, removed: 12 },
@@ -24,13 +23,26 @@ describe('Mercury Code end-of-task summary', () => {
       uncommitted: true,
     });
 
-    expect(summary).toContain('**What was done**');
-    expect(summary).toContain('• Read auth module');
+    // Changes renders FIRST — before "What was done".
+    expect(summary.indexOf('**Changes**')).toBeLessThan(summary.indexOf('**What was done**'));
     expect(summary).toContain('**Changes** · 2 files');
-    expect(summary).not.toContain('src/a.ts'); // paths render as the banner's file rows
+    expect(summary).toContain('  ↳ src/a.ts · +45 −12'); // inline path attribution
+    expect(summary).toContain('• Read auth module');
     expect(summary).toContain('**Next steps**');
     expect(summary).toContain('not verified yet');
     expect(summary).toContain('git diff');
+  });
+
+  it('a general chat turn (no file tools) produces NO Changes section', () => {
+    const summary = buildTaskSummary({
+      fileChanges: [],
+      doneSteps: ['Read auth module', 'Refactor login flow'],
+      verified: false,
+      uncommitted: true,
+    });
+    expect(summary).not.toContain('**Changes**');
+    expect(summary).not.toContain('**Next steps**');
+    expect(summary).toContain('**What was done**');
   });
 
   it('shows at most 5 what-was-done bullets', () => {
