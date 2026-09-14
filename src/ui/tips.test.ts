@@ -46,7 +46,7 @@ describe('tip picker (anti-nag)', () => {
     for (let i = 0; i < pool.length; i++) {
       const tip = rotateTip('code');
       expect(seen.has(tip!.id)).toBe(false);
-      seen.add(tip.id);
+      seen.add(tip!.id);
     }
     // One more rotation re-offers the earliest tip — the cycle restarts.
     expect(seen.size).toBe(pool.length);

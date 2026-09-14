@@ -125,6 +125,17 @@ export function getManual(): string {
     ['/session archive <ref>', 'Archive a session'],
     ['/session delete <ref>', 'Permanently delete a session after confirmation'],
     ['/progress', 'Show live status for the current long task'],
+    ['/log', 'Print the last finished task’s step log'],
+    ['/bg', 'Show background tasks and current task status'],
+    ['/bg current', 'Move the current task to the background (keeps running)'],
+    ['/bg list', 'List background tasks'],
+    ['/bg cancel <id>', 'Cancel a background task'],
+    ['/bg clear', 'Remove finished background tasks from the list'],
+    ['/bg killall', 'Cancel all background tasks'],
+    ['/budget', 'Show token budget status'],
+    ['/budget override', 'Allow one request past the budget'],
+    ['/budget reset', 'Reset daily usage to zero'],
+    ['/budget set <n>', 'Set the daily token budget'],
     ['/telegram', 'CLI chat only: open the Telegram management menu'],
     ['/telegram pending', 'CLI chat only: list pending Telegram requests'],
     ['/telegram users', 'CLI chat only: list approved Telegram users'],
@@ -141,10 +152,13 @@ export function getManual(): string {
     ['/skills install <id|url>', 'Install from the registry or a raw SKILL.md URL'],
     ['/skills remove <id>', 'Uninstall a skill'],
     ['/permissions', 'Change permission mode (Ask Me / Allow All)'],
+    ['/models', 'List configured providers and their models'],
+    ['/models use <provider>', 'Switch the default model (saved across restarts)'],
+    ['/cloud models', 'List Mercury Cloud models for your tier'],
+    ['/cloud use <model-id>', 'Switch to a Mercury Cloud model'],
     ['/view', 'Toggle progress view (balanced/detailed)'],
     ['/view balanced', 'Set compact progress view'],
     ['/view detailed', 'Set full progress view'],
-    ['/tasks', 'List scheduled tasks'],
     ['/memory', 'View and manage second brain memory'],
     ['/stream', 'Toggle text streaming on/off (Telegram)'],
     ['/stream on', 'Enable streaming (live text updates)'],
@@ -291,10 +305,22 @@ export function getTelegramHelp(): string {
   lines.push('/help — Show this command list');
   lines.push('/status — Config, budget, and uptime');
   lines.push('/progress — Live status for the current task');
+  lines.push('/log — Step log of the last finished task');
+  lines.push('/whatsnew — What changed in this Mercury version');
+  lines.push('/update ignore — Silence the offered update notice');
   lines.push('/permissions — Switch Ask Me / Allow All mode');
-  lines.push('/models — List providers or switch AI model');
+  lines.push('/models — List providers or switch AI model (saved across restarts)');
   lines.push('/cloud models — List Mercury Cloud models and switch');
   lines.push('/stream — Toggle text streaming on/off');
+  lines.push('/stop — Stop the current task and its agents now');
+  lines.push('/halt — Emergency: stop all agents and clear the queue');
+  lines.push('');
+
+  lines.push('**Tasks**');
+  lines.push('/bg — Show background tasks and current task status');
+  lines.push('/bg current — Move the current task to the background (keeps running)');
+  lines.push('/bg list — List background tasks');
+  lines.push('/bg cancel <id> — Cancel a background task');
   lines.push('');
 
   lines.push('**Budget**');
@@ -387,9 +413,21 @@ export function getDiscordHelp(): string {
   lines.push('/help \u2014 Show this command list');
   lines.push('/status \u2014 Config, budget, and uptime');
   lines.push('/progress \u2014 Live status for the current task');
+  lines.push('/log \u2014 Step log of the last finished task');
+  lines.push('/whatsnew \u2014 What changed in this Mercury version');
+  lines.push('/update ignore \u2014 Silence the offered update notice');
   lines.push('/permissions \u2014 Switch Ask Me / Allow All mode');
-  lines.push('/models \u2014 List providers or switch AI model');
+  lines.push('/models \u2014 List providers or switch AI model (saved across restarts)');
   lines.push('/cloud models \u2014 List Mercury Cloud models and switch');
+  lines.push('/stop \u2014 Stop the current task and its agents now');
+  lines.push('/halt \u2014 Emergency: stop all agents and clear the queue');
+  lines.push('');
+
+  lines.push('**Tasks**');
+  lines.push('/bg \u2014 Show background tasks and current task status');
+  lines.push('/bg current \u2014 Move the current task to the background (keeps running)');
+  lines.push('/bg list \u2014 List background tasks');
+  lines.push('/bg cancel <id> \u2014 Cancel a background task');
   lines.push('');
 
   lines.push('**Budget**');
@@ -426,7 +464,12 @@ export function getSlackHelp(): string {
   lines.push('**General**');
   lines.push('/mercury help \u2014 Show this command list');
   lines.push('/mercury status \u2014 Config, budget, and uptime');
-  lines.push('/mercury stop \u2014 Stop all agents');
+  lines.push('/mercury progress \u2014 Live status for the current task');
+  lines.push('/mercury log \u2014 Step log of the last finished task');
+  lines.push('/mercury whatsnew \u2014 What changed in this Mercury version');
+  lines.push('/mercury update ignore \u2014 Silence the offered update notice');
+  lines.push('/mercury models \u2014 List providers or switch AI model');
+  lines.push('/mercury stop \u2014 Stop the current task and its agents now');
   lines.push('');
 
   lines.push('**Budget**');

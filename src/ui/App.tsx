@@ -118,6 +118,9 @@ export function TuiApp({ channel, onInput, onPermissionResolve, onExit, spotifyC
 
   const slashCommands = React.useMemo(() => [
     '/help',
+    '/whatsnew',
+    '/update ignore',
+    '/log',
     '/sessions',
     '/session new',
     '/session current',
@@ -139,6 +142,8 @@ export function TuiApp({ channel, onInput, onPermissionResolve, onExit, spotifyC
     '/code off',
     '/code toggle',
     '/code exit',
+    '/code chat',
+    '/code back',
     '/research',
     '/research on',
     '/research off',
