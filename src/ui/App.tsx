@@ -2281,15 +2281,29 @@ const STREAM_TAIL_MAX_LINES = 48;
 const MERCURY_CODE_LIVE_CHROME_ROWS = 14;
 
 /**
+ * Extra rows of headroom under the terminal height. MERCURY_CODE_LIVE_CHROME_ROWS
+ * is an estimate: MercuryLiveFeedback alone can render ~10 rows (phase, running
+ * tool, done ticks, thinking preview, up to 4 swarm agents) and prompts/checklists
+ * stack on top. If the live region reaches `rows`, stock ink used to clear the
+ * whole terminal (scrollback included) and re-dump the transcript every frame —
+ * the patched ink now bottom-trims the frame instead, but the goal is to never
+ * need the trim, so the tail cap keeps real chrome strictly under `rows`.
+ */
+const LIVE_HEIGHT_SAFETY_MARGIN = 2;
+
+/**
  * Live streaming tail row cap, derived from the terminal height. The cap must
- * stay well under `rows`: ink clears the whole terminal and rewrites the
- * static transcript whenever the live region's height reaches `rows`
- * (ink.js: `outputHeight >= stdout.rows`) — a fixed 48-row tail on a 30-row
- * terminal would nuke scrollback every frame. Diff-render makes the rewrite
- * itself cheap (only changed rows are re-emitted), so the cap is generous.
+ * keep the live region strictly under `rows`: ink's overflow path rewrites the
+ * whole terminal whenever `outputHeight >= stdout.rows`, and with a long
+ * conversation that re-dump is enormous. Diff-render makes per-frame writes
+ * cheap, so the cap stays generous; the ink-level guard is the backstop when
+ * transient chrome (prompts, plan checklist) pushes the region over.
  */
 export function streamTailRowCap(terminalRows: number): number {
-  return Math.max(STREAM_TAIL_MIN_LINES, Math.min(STREAM_TAIL_MAX_LINES, terminalRows - MERCURY_CODE_LIVE_CHROME_ROWS));
+  return Math.max(
+    STREAM_TAIL_MIN_LINES,
+    Math.min(STREAM_TAIL_MAX_LINES, terminalRows - MERCURY_CODE_LIVE_CHROME_ROWS - LIVE_HEIGHT_SAFETY_MARGIN),
+  );
 }
 
 /**

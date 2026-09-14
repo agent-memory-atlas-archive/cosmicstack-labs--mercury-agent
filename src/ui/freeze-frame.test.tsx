@@ -159,7 +159,7 @@ describe('Mercury Code streaming tail: full preview + padded height', () => {
       { stdout, exitOnCtrlC: false, patchConsole: false },
     );
     void rerender;
-    const cap = Math.max(6, Math.min(48, 45 - 14)); // streamTailRowCap(45)
+    const cap = Math.max(6, Math.min(48, 45 - 14 - 2)); // streamTailRowCap(45)
     // The 200-line message must render MANY more rows live than the old
     // 12-row cap — full preview of the streaming block — while staying
     // bounded by the cap.
@@ -172,13 +172,15 @@ describe('Mercury Code streaming tail: full preview + padded height', () => {
   }, 10_000);
 
   it('streamTailRowCap derives from the terminal rows (never >= rows)', () => {
-    // 24-row terminal: 10 tail rows; 30 rows: 16; 60+: capped at 48 —
-    // always rows - 14 at minimum 6, so ink's clearTerminal path
-    // (outputHeight >= rows) can never trip.
-    const cap = (rows: number) => Math.max(6, Math.min(48, rows - 14));
-    expect(cap(24)).toBe(10);
-    expect(cap(30)).toBe(16);
-    expect(cap(45)).toBe(31);
+    // 24-row terminal: 8 tail rows; 30 rows: 14; 60+: capped at 48 —
+    // always rows - 16 at minimum 6, so the tail plus the worst realistic
+    // live chrome (~14 rows: feedback block, input box, status bar) stays
+    // strictly under `rows` and ink's overflow path (outputHeight >= rows)
+    // can never trip during a normal stream.
+    const cap = (rows: number) => Math.max(6, Math.min(48, rows - 14 - 2));
+    expect(cap(24)).toBe(8);
+    expect(cap(30)).toBe(14);
+    expect(cap(45)).toBe(29);
     expect(cap(120)).toBe(48);
     expect(cap(10)).toBe(6); // tiny terminal: floor, never negative
   });

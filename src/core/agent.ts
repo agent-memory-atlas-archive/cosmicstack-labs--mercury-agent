@@ -564,8 +564,12 @@ export class Agent {
 
     // Research-y message prompt: when research mode is off and the message looks
     // like a deep-research request, ask whether to run a full research pass.
+    // Never prompt in Mercury Code (the coding TUI) — its questions are about
+    // the repo, not web research, so the prompt is pure friction there.
     const isUserMessage = msg.channelType !== 'internal' && msg.senderId !== 'system' && !trimmed.startsWith('/');
-    if (isUserMessage && !this.researchMode.isActive() && looksResearchy(trimmed)) {
+    const promptChannel = this.channels.getChannelForMessage(msg);
+    const inMercuryCode = promptChannel instanceof CLIChannel && promptChannel.getTuiState().mercuryCode != null;
+    if (isUserMessage && !inMercuryCode && !this.researchMode.isActive() && looksResearchy(trimmed)) {
       this.promptResearchMode(msg, workKey).catch((err) => {
         logger.warn({ err: err.message }, 'Research-mode prompt failed — proceeding with normal message');
         this.queueMessage(msg, workKey);

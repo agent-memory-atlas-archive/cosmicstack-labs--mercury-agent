@@ -94,7 +94,7 @@ index 9c54f14..6274f9a 100644
      const style = useMemo(() => ({
          position: 'absolute',
 diff --git a/node_modules/ink/build/ink.js b/node_modules/ink/build/ink.js
-index a9c444f..32e1ae4 100644
+index a9c444f..f3457f7 100644
 --- a/node_modules/ink/build/ink.js
 +++ b/node_modules/ink/build/ink.js
 @@ -14,6 +14,14 @@ import logUpdate from './log-update.js';
@@ -112,10 +112,12 @@ index a9c444f..32e1ae4 100644
  export default class Ink {
      options;
      log;
-@@ -99,6 +107,14 @@ export default class Ink {
+@@ -98,7 +106,33 @@ export default class Ink {
+         if (this.isUnmounted) {
              return;
          }
-         const { output, outputHeight, staticOutput } = render(this.rootNode);
+-        const { output, outputHeight, staticOutput } = render(this.rootNode);
++        let { output, outputHeight, staticOutput } = render(this.rootNode);
 +        // Freeze gate (Cosmic Stack patch): drop the frame entirely — no
 +        // write, and crucially NO advance of `lastOutput` or log-update's
 +        // `previousOutput`/`previousLineCount` baseline, so the frame that
@@ -124,11 +126,29 @@ index a9c444f..32e1ae4 100644
 +            return;
 +        }
 +        if (frameGate.armed) frameGate.armed = false;
++        // Live-region guard (Cosmic Stack patch): a live frame as tall as (or
++        // taller than) the terminal cannot go through log-update's cursor
++        // arithmetic, and stock ink's fallback is `clearTerminal +
++        // fullStaticOutput + output` — erasing the ENTIRE scrollback buffer
++        // and re-dumping every static byte ever printed, on EVERY frame. With
++        // a long transcript that is megabytes per frame: the scrollbar jumps
++        // to the top, the UI flickers, and native scrolling becomes
++        // impossible. Instead keep the frame bottom-anchored: trim to what
++        // fits (rows - 1) and let the normal diff path write it. Scrollback
++        // is never cleared, the transcript is never re-dumped, and the newest
++        // rows (live tail, input, status bar) stay visible.
++        const maxLiveRows = Math.max(1, (this.options.stdout.rows || 24) - 1);
++        if (outputHeight >= (this.options.stdout.rows || 24)) {
++            // `output` is newline-terminated per row WITHOUT a trailing blank
++            // line (log-update appends its own), so split and re-join verbatim.
++            output = output.split('\n').slice(-maxLiveRows).join('\n');
++            outputHeight = maxLiveRows;
++        }
          // If <Static> output isn't empty, it means new children have been added to it
          const hasStaticOutput = staticOutput && staticOutput !== '\n';
          if (this.options.debug) {
 diff --git a/node_modules/ink/build/log-update.js b/node_modules/ink/build/log-update.js
-index 547421e..a2bbc9b 100644
+index 547421e..73cb297 100644
 --- a/node_modules/ink/build/log-update.js
 +++ b/node_modules/ink/build/log-update.js
 @@ -13,9 +13,26 @@ const create = (stream, { showCursor = false } = {}) => {
