@@ -114,6 +114,8 @@ export function getManual(): string {
     ['/pair', 'Start Telegram pairing or request Telegram access'],
     ['/', 'Open the CLI command picker with arrow-key navigation'],
     ['/menu', 'Open the CLI command picker with arrow-key navigation'],
+    ['/whatsnew', "See what's new in this Mercury version"],
+    ['/update ignore', 'Silence the offered update notice permanently'],
     ['/help', 'Show this manual'],
     ['/status', 'Show config and budget info'],
     ['/sessions', 'List active canonical sessions'],

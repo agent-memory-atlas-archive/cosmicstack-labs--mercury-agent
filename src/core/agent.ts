@@ -81,6 +81,7 @@ import { MAX_EXECUTE_CONTINUATIONS, MAX_VERIFICATION_CONTINUATIONS, executeConti
 import { classifyTurnEnd, stepsExhaustedPrompt, STEPS_PAUSED_BANNER, WORK_NOT_STARTED_BANNER, type LoopEndCause } from './completion-verdict.js';
 import { StallWatchdog } from './stall-watchdog.js';
 import { buildFileChangePreview } from '../utils/file-preview.js';
+import { whatsNewText } from '../utils/whats-new.js';
 
 /**
  * Step-aware text stream for the TUI. The SDK's textStream concatenates
@@ -4994,6 +4995,41 @@ Is this productive iteration or a stuck loop?`,
     if (cmd === '/help') {
       const helpText = channelType === 'telegram' ? getTelegramHelp() : channelType === 'discord' ? getDiscordHelp() : channelType === 'slack' ? getSlackHelp() : ctx.manual();
       await channel.send(helpText, channelId);
+      return true;
+    }
+
+    if (cmd === '/whatsnew' || cmd.startsWith('/whatsnew ')) {
+      // Curated highlights for the running version — one friendly block,
+      // exhaustive notes stay in CHANGELOG.md / the releases page.
+      const runningVersion = channelType === 'cli' && channel instanceof CLIChannel
+        ? (channel.getTuiState().version || 'dev')
+        : 'dev';
+      await channel.send(whatsNewText(runningVersion), channelId).catch((e) => logger.warn({ e }, 'channel send failed'));
+      return true;
+    }
+
+    if (cmd.startsWith('/update')) {
+      const sub = trimmed.slice('/update'.length).trim().toLowerCase();
+      if (sub === 'ignore') {
+        const { latestSeenUpdate, ignoreUpdateVersion, getIgnoredUpdateVersion } = await import('../cli/update-notice.js');
+        const runningVersion = channelType === 'cli' && channel instanceof CLIChannel
+          ? (channel.getTuiState().version || 'dev')
+          : 'dev';
+        const target = latestSeenUpdate(runningVersion);
+        if (!target) {
+          await channel.send('Nothing to ignore — no update was offered for this version.', channelId);
+          return true;
+        }
+        if (getIgnoredUpdateVersion() === target) {
+          await channel.send(`Update to v${target} is already ignored.`, channelId);
+          return true;
+        }
+        ignoreUpdateVersion(target);
+        if (channel instanceof CLIChannel) channel.setUpdateAvailable(null);
+        await channel.send(`Ignored — update notices for v${target} are silenced permanently. \`mercury upgrade\` in the terminal still works whenever you want it.`, channelId);
+        return true;
+      }
+      await channel.send('Usage: `/update ignore` — permanently silence the offered update notice.', channelId);
       return true;
     }
 

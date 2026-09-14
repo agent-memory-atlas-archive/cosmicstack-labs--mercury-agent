@@ -2725,6 +2725,9 @@ export function MercuryCodeView({
   // Developer status HUD: token budget is otherwise invisible in Mercury
   // Code (TokenBarView only renders in chat surfaces).
   if (state.tokenInfo) rightSegs.push({ text: `⚡ ${Math.round(state.tokenInfo.percentage)}%`, color: 'green' });
+  // Update-available indicator: one dim segment, no extra row — ignorable via
+  // /update ignore, so it must never crowd the bar.
+  if (state.updateAvailable) rightSegs.push({ text: `⬆ v${state.updateAvailable}`, color: 'yellow' });
   // Fit: drop whole segments from the right when the terminal is narrow.
   const SEP = ' · ';
   let segWidth = 4; // paddingX on both sides

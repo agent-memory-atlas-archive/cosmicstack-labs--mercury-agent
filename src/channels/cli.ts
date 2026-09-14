@@ -306,6 +306,9 @@ export interface TuiState {
   /** TUI frame freeze (scroll lock): all frame writes stop so the user can
    * scroll/copy freely while the chat continues underneath. Ctrl+S toggles. */
   tuiFrozen: boolean;
+  /** A newer Mercury version the background check found — shown as a tiny
+   * bottom-bar indicator (⬆ vX) in Mercury Code until ignored. */
+  updateAvailable: string | null;
 }
 
 const defaultState: TuiState = {
@@ -338,6 +341,7 @@ const defaultState: TuiState = {
   exitEscArmed: false,
   liveActivity: null,
   tuiFrozen: false,
+  updateAvailable: null,
 };
 
 function shallowEqualSubAgents(a: SubAgentInfo[], b: SubAgentInfo[]): boolean {
@@ -366,6 +370,17 @@ export class CLIChannel extends BaseChannel {
   private menuDepth = 0;
   private menuAbortController: AbortController | null = null;
   private heartbeatMsgId: string | null = null;
+
+  /** update-notice helpers, imported lazily (a static import would pull
+   * cli/daemon.js into an import cycle through channels/cli.ts). */
+  private updateNoticeApiPromise: Promise<any> | null = null;
+
+  private updateNoticeApi() {
+    if (!this.updateNoticeApiPromise) {
+      this.updateNoticeApiPromise = import('../cli/update-notice.js');
+    }
+    return this.updateNoticeApiPromise;
+  }
   private stepCount = 0;
   private stepStartTime = 0;
   private state: TuiState = { ...defaultState };
@@ -1644,7 +1659,40 @@ export class CLIChannel extends BaseChannel {
     try {
       process.stdout.write('\x1b[2J\x1b[H');
     } catch { /* ignore */ }
+    // Graceful one-time notices (never blocking, never repeated): the
+    // /whatsnew hint when this boot is a fresh install or an update, and a
+    // throttled background update check. Entirely async and unref'd — a slow
+    // npm look-up must never stall the TUI.
+    void this.announceVersionNotices(version);
     return { ok: true, message: `Mercury Code active in ${dirName}` };
+  }
+
+  /**
+   * One-time, once-per-version notices on Mercury Code entry. Tests skip the
+   * network check (VITEST); the hint is persisted in update-state.json so it
+   * cannot repeat for the same version even across restarts.
+   */
+  private async announceVersionNotices(version: string): Promise<void> {
+    if (process.env.VITEST || process.env.MERCURY_NO_UPDATE_CHECK === '1') return;
+    try {
+      const { shouldShowWhatsNewHint, markWhatsNewHintShown, maybeCheckForUpdate } = await this.updateNoticeApi();
+      if (shouldShowWhatsNewHint(version)) {
+        markWhatsNewHintShown(version);
+        this.sendSystemNotice(`☿ Mercury v${version} is here. Type \`/whatsnew\` to see what's new.`);
+      }
+      const latest = await maybeCheckForUpdate(version);
+      if (latest) {
+        this.setUpdateAvailable(latest);
+        this.sendSystemNotice(`⬆ Update available: v${version} → v${latest}. Run \`mercury upgrade\` in your terminal when you're ready — or ignore this version with \`/update ignore\`.`);
+      }
+    } catch (err) {
+      logger.debug({ err }, 'announceVersionNotices failed (non-fatal)');
+    }
+  }
+
+  /** Latest version the user hasn't ignored (for /update ignore even when the check is throttled). */
+  setUpdateAvailable(latestVersion: string | null): void {
+    this.update({ updateAvailable: latestVersion });
   }
 
   exitMercuryCode(): void {
