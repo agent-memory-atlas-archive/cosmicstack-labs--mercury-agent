@@ -14,11 +14,11 @@ interface ReleaseHighlights {
 }
 
 const WHATS_NEW: Record<string, ReleaseHighlights> = {
-  '1.2.9': {
+  '1.2.6': {
     added: [
       '**Progressive streaming** — Mercury Code builds the document in native scrollback while it streams; sections appear styled as they finish instead of a wall of newest lines.',
       '**End-of-task summary** — what was done, how many files changed (top 5 listed), and suggested next steps in the completion banner.',
-      '**Contextual status words** — the spinner says "Painting the UI" or "Hunting the bug" based on your request. Zero LLM tokens.',
+      '**Dynamic status verbs** — Mercury Code watches the session, then makes one tiny LLM call per session for status words that describe the actual work ("Extracting the parser", "Rerouting the auth flow") — never generic filler. Chat surfaces keep plain static labels.',
       '**Chat → Mercury Code hand-off** — normal chat asks once when a task looks like coding work; your choice is remembered per session.',
       '**Provider fallback visibility** — a respectful one-line notice names the failed provider, the reason, and which route the task continues on.',
       '`mercury code [dir]` launches the coding TUI from the terminal; `mercury uninstall` removes everything cleanly.',
@@ -29,6 +29,8 @@ const WHATS_NEW: Record<string, ReleaseHighlights> = {
       'Ink patched: a live frame taller than the terminal is bottom-trimmed instead of erasing the entire scrollback and re-dumping the transcript.',
     ],
     fixed: [
+      'Streaming progress rendered as word salad — each step\'s narration now starts its own paragraph in the live tail ("Let me investigate…\\n\\nFound the situation…").',
+      'The `│` transcript rule stays on settled messages; only the in-progress live tail renders without it.',
       'Long-conversation rerender storm — the scrollbar no longer jumps to the top and native scrolling works during streams.',
       'The Mercury Code research-mode prompt no longer fires (its questions were pure friction there).',
     ],

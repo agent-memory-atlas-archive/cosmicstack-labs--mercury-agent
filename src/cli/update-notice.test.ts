@@ -81,8 +81,8 @@ describe('update-notice (graceful, once-per-version)', () => {
 
 describe('/whatsnew content', () => {
   it('renders action-grouped sections (Added / Updated / Fixed) for a published version', () => {
-    const text = whatsNewText('1.2.9');
-    expect(text).toContain("**Mercury v1.2.9 — what's new**");
+    const text = whatsNewText('1.2.6');
+    expect(text).toContain("**Mercury v1.2.6 — what's new**");
     expect(text).toContain('**Added**');
     expect(text).toContain('• **Progressive streaming**');
     expect(text).toContain('**Updated**');
@@ -90,9 +90,9 @@ describe('/whatsnew content', () => {
   });
 
   it('prints the release-notes URL at the bottom (exact tag + all releases)', () => {
-    const text = whatsNewText('1.2.9');
+    const text = whatsNewText('1.2.6');
     const lines = text.split('\n');
-    expect(lines[lines.length - 2]).toBe('Release notes: https://github.com/cosmicstack-labs/mercury-agent/releases/tag/v1.2.9');
+    expect(lines[lines.length - 2]).toBe('Release notes: https://github.com/cosmicstack-labs/mercury-agent/releases/tag/v1.2.6');
     expect(lines[lines.length - 1]).toBe('All releases:  https://github.com/cosmicstack-labs/mercury-agent/releases');
   });
 
