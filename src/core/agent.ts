@@ -404,6 +404,33 @@ function looksResearchy(text: string): boolean {
   return temporal.test(t) || deep.test(t) || factual.test(t);
 }
 
+/** No answer to the Mercury Code hand-off prompt is treated as "keep chatting". */
+export const MERCURY_CODE_HANDOFF_TIMEOUT_MS = 45_000;
+
+/**
+ * Coding-shaped task detector for the Mercury Code hand-off prompt.
+ * Conservative — only messages that clearly describe build/repair work on a
+ * codebase match (build/repair verbs + code artifacts, source-file paths,
+ * shell/package-manager commands, or fenced code). Conceptual chat questions
+ * about code ("what is a pointer", "explain recursion") never match, so the
+ * prompt stays rare.
+ */
+export function looksLikeCodingTask(text: string): boolean {
+  const t = text.toLowerCase();
+  if (t.length < 16 || t.startsWith('/')) return false;
+
+  // Concept-chat noise never prompts.
+  const chatNoise = /\b(what is|what's|whats|who is|explain|difference between|meaning of|how does|how do)\b/;
+  if (chatNoise.test(t)) return false;
+
+  const intent = /\b(implement|refactor|write|create|build|develop|add|fix|debug|migrate|restructure|scaffold|optimize|clean up|cleanup)\b/;
+  const artifact = /\b(code|function|method|class|component|module|feature|endpoint|api|route|handler|script|library|package|bug|regression|test suite|codebase|repository|repo|app|application|plugin|migration|schema|database|service|ui|frontend|backend)\b/;
+  const pathOrCommand = /(^|[\s"'(])[\w./@~-]+\.(ts|tsx|js|jsx|py|rs|go|java|kt|rb|php|c|cpp|cs|swift|sh)\b|\b(npm|pnpm|yarn|pip|cargo|git|docker|make|gradle|mvn)\s+\w+/;
+  const fence = /```/;
+
+  return (intent.test(t) && artifact.test(t)) || pathOrCommand.test(t) || fence.test(t);
+}
+
 export class Agent {
   readonly lifecycle: Lifecycle;
   readonly scheduler: Scheduler;
@@ -578,8 +605,84 @@ export class Agent {
       return;
     }
 
+    // Mercury Code hand-off: in the normal chat TUI, a coding-shaped task may
+    // belong in the coding TUI. Ask once; no answer within the timeout is
+    // treated as "No" and the request proceeds in normal chat — never blocked.
+    // The research prompt above takes precedence when both match (the message
+    // returned there already).
+    if (isUserMessage && !inMercuryCode && promptChannel instanceof CLIChannel && looksLikeCodingTask(trimmed)) {
+      this.promptMercuryCodeHandoff(promptChannel, msg, workKey).catch((err) => {
+        logger.warn({ err: err.message }, 'Mercury Code hand-off prompt failed — proceeding with normal message');
+        this.queueMessage(msg, workKey);
+        this.processQueue();
+      });
+      return;
+    }
+
     this.queueMessage(msg, workKey);
     this.processQueue();
+  }
+
+  /**
+   * Mercury Code hand-off: in the normal chat TUI, a coding-shaped task may be
+   * better served by the full-screen coding TUI. Ask ONCE with a timeout — an
+   * unanswered prompt resolves to "keep chatting" after
+   * MERCURY_CODE_HANDOFF_TIMEOUT_MS so the request is never left blocked.
+   * Only the CLI TUI is prompted (Mercury Code is a terminal surface; other
+   * channels just keep chatting).
+   */
+  private async promptMercuryCodeHandoff(channel: CLIChannel, msg: ChannelMessage, workKey?: string): Promise<void> {
+    const choice = await this.presentChoiceWithTimeout(
+      'This looks like a coding task. Open it in Mercury Code (full-screen coding TUI — plan + build in one flow)?',
+      ['Yes — switch to Mercury Code and continue there', 'No — continue in normal chat'],
+      msg.channelId,
+      msg.channelType,
+      MERCURY_CODE_HANDOFF_TIMEOUT_MS,
+      1, // time-weighted default: No
+    );
+
+    if (choice.startsWith('Yes')) {
+      const cwd = this.capabilities.getCwd();
+      const entered = channel.enterMercuryCode(cwd, channel.getTuiState().version || 'dev');
+      if (entered.ok) {
+        this.programmingMode.setAuto();
+        this.programmingMode.setProjectContext(cwd);
+        channel.setProgrammingStatus(this.programmingMode.getState(), this.programmingMode.getProjectContext());
+        await channel.send('Mercury Code active (AUTO) — continuing your request here.', msg.channelId).catch(() => {});
+      } else {
+        await channel.send(`Could not open Mercury Code (${entered.message}) — continuing in normal chat.`, msg.channelId).catch(() => {});
+      }
+    }
+    this.queueMessage(msg, workKey);
+    this.processQueue();
+  }
+
+  /**
+   * presentChoice with a time-weighted default: if the user does not answer
+   * within `timeoutMs`, the fallback choice wins and the work continues; a
+   * later answer is discarded. The visible prompt is dismissed on timeout so
+   * it never lingers waiting for input nobody will give.
+   */
+  private async presentChoiceWithTimeout(
+    question: string,
+    choices: string[],
+    channelId: string,
+    channelType: string,
+    timeoutMs: number,
+    fallbackIndex: number,
+  ): Promise<string> {
+    const fallback = choices[fallbackIndex];
+    const channel = this.channels.get(channelType as any);
+    const timeoutPromise = new Promise<string>((resolve) => {
+      setTimeout(() => {
+        if (channel instanceof CLIChannel) channel.resolveChoicePromptWithDefault(String(fallbackIndex));
+        resolve(fallback);
+      }, timeoutMs);
+    });
+    return Promise.race([
+      this.presentChoice(question, choices, channelId, channelType).catch(() => fallback),
+      timeoutPromise,
+    ]);
   }
 
   private queueMessage(message: ChannelMessage, workKey?: string): void {

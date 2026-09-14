@@ -1437,6 +1437,19 @@ export class CLIChannel extends BaseChannel {
     });
   }
 
+  /**
+   * Resolve a pending choice prompt with a default value (timeout / dismissal).
+   * Time-weighted prompts use this so an unanswered question is answered FOR
+   * the user and the box disappears instead of lingering forever.
+   */
+  resolveChoicePromptWithDefault(value: string): void {
+    if (!this.state.permissionPrompt) return;
+    const resolver = this.permissionResolver;
+    this.permissionResolver = null;
+    this.update({ permissionPrompt: null });
+    resolver?.(value);
+  }
+
   async askToContinue(question: string, _targetId?: string): Promise<boolean> {
     return new Promise((resolve) => {
       this.permissionResolver = (val) => {
