@@ -236,7 +236,14 @@ async function chooseDefaultProvider(config: MercuryConfig): Promise<void> {
     return;
   }
 
-  const suggested = configured.includes('deepseek') ? 'deepseek' : configured[0];
+  // Suggest the CURRENT default when it's still configured — on reconfig,
+  // pressing Enter (the universal "keep current" convention in this wizard)
+  // must keep it, not jump to the hard-coded suggestion.
+  const suggested = configured.includes(config.providers.default)
+    ? config.providers.default
+    : configured.includes('deepseek')
+      ? 'deepseek'
+      : configured[0];
 
   console.log('');
   console.log(chalk.bold.white('  Default Provider'));
@@ -1130,12 +1137,17 @@ async function configure(existingConfig?: MercuryConfig): Promise<void> {
     console.log('');
   }
 
+  // Reconfig respects the current mode: the CURRENT connection mode is
+  // listed first (and therefore highlighted), so pressing Enter to "keep
+  // current" can't accidentally re-pair Mercury Cloud and reset the default
+  // provider — which used to silently override the user's last choice.
+  const inCloudMode = config.providers.default === 'mercuryCloud' || config.cloud.enabled === true;
+  const cloudOption = { value: 'cloud', label: 'Mercury Cloud (hosted — no API keys needed)' };
+  const offlineOption = { value: 'offline', label: 'Offline / BYOK (bring your own keys)' };
+  const modeOptions = isReconfig && !inCloudMode ? [offlineOption, cloudOption] : [cloudOption, offlineOption];
   const cloudChoice = await selectWithArrowKeys(
     isReconfig ? 'Connection Mode' : 'Choose your mode',
-    [
-      { value: 'cloud', label: 'Mercury Cloud (hosted — no API keys needed)' },
-      { value: 'offline', label: 'Offline / BYOK (bring your own keys)' },
-    ],
+    modeOptions,
   );
 
   let llmConfiguredByCloud = false;

@@ -135,11 +135,26 @@ export class ProviderRegistry {
     const preferredProvider = preferredName ? this.providers.get(preferredName) : undefined;
     const defaultProvider = preferredProvider || this.getDefault();
     ordered.push(defaultProvider);
+    const rest: BaseProvider[] = [];
     for (const [, provider] of this.providers) {
       if (provider !== defaultProvider) {
-        ordered.push(provider);
+        rest.push(provider);
       }
     }
+    // Respect the user's chosen default: Mercury Cloud is the vendor-hosted
+    // safety net, not the first hijacker. Registration order puts it first in
+    // the map, so any failed attempt on a BYOK default used to promote
+    // Mercury Cloud immediately — and markSuccess then stuck to it for every
+    // following turn, silently overriding the configured default. When the
+    // user's default is NOT Mercury Cloud, it goes LAST in the fallback chain.
+    if (defaultProvider.name !== 'mercuryCloud') {
+      const cloudIndex = rest.findIndex((p) => p.name === 'mercuryCloud');
+      if (cloudIndex >= 0) {
+        const [cloud] = rest.splice(cloudIndex, 1);
+        rest.push(cloud);
+      }
+    }
+    ordered.push(...rest);
     return ordered[Symbol.iterator]();
   }
 

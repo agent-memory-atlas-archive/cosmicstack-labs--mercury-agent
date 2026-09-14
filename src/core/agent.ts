@@ -1353,6 +1353,8 @@ export class Agent {
   }
 
   private channelProviderOverrides = new Map<string, { providerName: string; modelName: string; provider: BaseProvider }>();
+  /** Dedupes the "served by a fallback provider" notice — one per (default → served) pair per runtime. */
+  private lastFallbackNoticeKey: string | null = null;
 
   async listChatModelOptions(): Promise<Array<{ provider: string; label: string; model: string; models: string[]; selected: boolean }>> {
     const active = getActiveProviders(this.config);
@@ -1438,9 +1440,13 @@ export class Agent {
     const selected = this.providers.getDefault();
     const model = selected.getModel();
 
+    // Persist: `/models use` is an explicit default change — it must survive
+    // restart. It used to mutate only the in-memory config, so the switch was
+    // silently lost (or half-persisted by an unrelated saveConfig) on restart.
+    saveConfig(this.config);
     updateCliProviderStatus(this.channels.get('cli'), providerName, model);
 
-    return { ok: true, message: `Session model switched to **${providerName}** · **${model}**.` };
+    return { ok: true, message: `Default model switched to **${providerName}** · **${model}**. Saved for future sessions.` };
   }
 
   /** Returns the currently active provider name and model. */
@@ -2962,6 +2968,24 @@ export class Agent {
           }
           if (!channelOverride) {
             this.providers.markSuccess(provider.name);
+            // Respect the configured default: when a fallback provider served
+            // the turn instead of it, SAY SO. The fallback used to be silent —
+            // combined with markSuccess stickiness the user's doctor choice
+            // was invisibly overridden for the rest of the session. One
+            // notice per (default → served) pair per runtime keeps it visible
+            // without spamming every turn.
+            if (provider.name !== this.config.providers.default && msg.channelType !== 'internal') {
+              const noticeKey = `${this.config.providers.default}→${provider.name}`;
+              if (this.lastFallbackNoticeKey !== noticeKey) {
+                this.lastFallbackNoticeKey = noticeKey;
+                const failureReason = providerFailures.get(this.config.providers.default)
+                  ?? 'not registered — run `mercury doctor`';
+                await channel?.send(
+                  `⚠ Configured default \`${this.config.providers.default}\` unavailable (${failureReason}) — served by \`${provider.name}\` this time.`,
+                  msg.channelId,
+                ).catch((e) => logger.warn({ e }, 'channel send failed'));
+              }
+            }
           }
           break;
         } catch (err: any) {
@@ -4850,7 +4874,7 @@ Is this productive iteration or a stuck loop?`,
             return `• ${p.name} · ${p.model}${marker}`;
           }),
           '',
-          'Use `/models use <provider>` to switch for this session.',
+          'Use `/models use <provider>` to switch the default (saved across restarts).',
           'Use `mercury doctor` to add/configure models.',
         ];
         await channel.send(lines.join('\n'), channelId);
