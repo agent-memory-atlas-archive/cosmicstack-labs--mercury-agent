@@ -1924,7 +1924,7 @@ function RunningStepRow({ step }: { step: ToolStep }) {
       <Text color={tone} bold>{step.label}</Text>
       <Text dimColor> · {timeStr}</Text>
       {elapsed >= 30 && elapsed < 90 && <Text color="yellow" dimColor> · still working</Text>}
-      {elapsed >= 90 && <Text color="red" dimColor> · long op (Ctrl+C cancels, /bg current to background)</Text>}
+      {elapsed >= 90 && <Text color="red" dimColor> · long op (/bg current to background, /stop to stop)</Text>}
     </Box>
   );
 }
@@ -2035,7 +2035,7 @@ function ThinkingIndicator({ agentName, steps, mode, liveActivity, thinkingPrevi
       </Box>
       <Box marginLeft={4}>
         <Text color={actionTone} bold>{currentAction}</Text>
-        {displayElapsed >= 90 && <Text color="red" dimColor> · long op (Ctrl+C cancels, /bg current to background)</Text>}
+        {displayElapsed >= 90 && <Text color="red" dimColor> · long op (/bg current to background, /stop to stop)</Text>}
       </Box>
       {thinkLine && (
         <Box marginLeft={4}>
@@ -2404,6 +2404,10 @@ function MercuryLiveFeedback({ state }: { state: TuiState }): React.ReactNode {
           {stepsDone > 0 && <Text dimColor> · step {stepsDone}</Text>}
           <Text dimColor> · {timeStr}</Text>
           {detail && <Text dimColor> — {detail}</Text>}
+          {/* Long-op hint (same 90s escalation as the chat surfaces): the
+              user can background OR stop a long task right from the coding
+              TUI — no need to hunt the command picker. One row, no churn. */}
+          {elapsedSec >= 90 && <Text color="red" dimColor> · long op — /bg current to background, /stop to stop</Text>}
         </Box>
       )}
       {running && (
