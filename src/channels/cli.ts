@@ -1002,6 +1002,23 @@ export class CLIChannel extends BaseChannel {
   }
 
   /**
+   * Durable system notice (provider fallback errors, switch announcements).
+   * Unlike the heartbeat, it RENDERS in Mercury Code (heartbeat rows are
+   * filtered out of the coding transcript) and it is NOT removed when the
+   * turn ends — the user must still see, after the response, that a provider
+   * failed and the task continued on another route.
+   */
+  sendSystemNotice(content: string): void {
+    const msg: ChatMessage = {
+      id: `notice-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      role: 'system',
+      content,
+      timestamp: Date.now(),
+    };
+    this.trimAndSetMessages([...this.state.chatMessages, msg]);
+  }
+
+  /**
    * Real-time tool event: called at TOOL EXECUTION START (from the AI SDK's
    * onToolCallStart), not after the LLM step completes. The step shows as
    * running with a live elapsed timer while the tool actually runs.

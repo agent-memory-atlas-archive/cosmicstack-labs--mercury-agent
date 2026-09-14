@@ -408,6 +408,34 @@ function looksResearchy(text: string): boolean {
 export const MERCURY_CODE_HANDOFF_TIMEOUT_MS = 45_000;
 
 /**
+ * Whitelabel a provider error into one short, respectful line for the chat:
+ * the user gets the real reason (token expired, rate limit, server error) —
+ * never a stack trace or raw HTTP dump.
+ */
+export function whitelabelProviderError(err: any): string {
+  const raw = String(err?.message || err || 'unknown error');
+  const body = typeof (err as any)?.responseBody === 'string' ? (err as any).responseBody : '';
+  const combined = `${raw} ${body}`;
+
+  if (/401|invalid[_ -]?api[_ -]?key|token expired|expired token|invalid_api_key|unauthorized|authentication|credential/i.test(combined)) {
+    return 'Access token expired or rejected (credentials)';
+  }
+  if (/403|forbidden|permission/i.test(combined)) {
+    return 'The provider refused the request (permissions/quota)';
+  }
+  if (/429|rate limit|too many requests/i.test(combined)) {
+    return 'Rate limited — too many requests right now';
+  }
+  if (/max[_ -]?tokens|context (length|window)|too large|exceed/i.test(combined)) {
+    return 'The request exceeded the model limit';
+  }
+  if (/(5\d\d|bad gateway|service unavailable|timeout|timed out|ECONNRESET|ENOTFOUND|fetch failed|network)/i.test(combined)) {
+    return 'Provider server error or network timeout';
+  }
+  return raw.split('\n')[0].replace(/\s+/g, ' ').slice(0, 120) || 'unknown error';
+}
+
+/**
  * Coding-shaped task detector for the Mercury Code hand-off prompt.
  * Conservative — only messages that clearly describe build/repair work on a
  * codebase match (build/repair verbs + code artifacts, source-file paths,
@@ -1475,6 +1503,26 @@ export class Agent {
     return /timeout|timed out|network|socket|connection|temporar|unavailable|overloaded|rate.?limit|\b429\b|\b5\d\d\b|econn|fetch failed|stalled/.test(message);
   }
 
+  /**
+   * Durable provider fallback notice. On the CLI TUI (Mercury Code included)
+   * it goes through sendSystemNotice — a durable system row that renders in
+   * the coding transcript and survives the turn; on other channels it rides
+   * the heartbeat or a plain send as before.
+   */
+  private async sendFallbackNotice(msg: ChannelMessage, line: string): Promise<void> {
+    const channel = this.channels.getChannelForMessage(msg);
+    if (!channel || msg.channelType === 'internal') return;
+    if (channel instanceof CLIChannel) {
+      channel.sendSystemNotice(line);
+      return;
+    }
+    if (channel instanceof WebChannel) {
+      channel.sendHeartbeat(line, msg.channelId);
+      return;
+    }
+    await channel.send(line, msg.channelId);
+  }
+
   private async sendProgressNotice(msg: ChannelMessage, message: string): Promise<void> {
     const channel = this.channels.getChannelForMessage(msg);
     if (!channel || msg.channelType === 'internal') return;
@@ -2287,11 +2335,16 @@ export class Agent {
       // limit) — showing only the last error hides the real fix from the
       // user.
       const providerFailures = new Map<string, string>();
+      // Per-turn dedupe for the whitelabeled fallback notices — the same
+      // provider failing repeatedly (guard rounds, retries) must not spam the
+      // transcript with identical lines.
+      const noticedProviderFailures = new Set<string>();
       // Guard-round provider rotation cursor (round 1 = current provider,
       // then walks the fallback chain — a narration-locked model is not the
       // only worker the agent has).
       let guardProviderCursor = 0;
-      for (const provider of [...providersForAttempt, ...providersForAttempt]) {
+      const providerChain = [...providersForAttempt, ...providersForAttempt];
+      for (const provider of providerChain) {
         // Per-attempt latency accounting: the only way to answer "why is
         // coding slow" with data instead of guesses.
         const attemptStartedAt = Date.now();
@@ -3205,8 +3258,19 @@ export class Agent {
             break;
           }
           logger.warn({ provider: provider.name, err: err.message }, 'Provider failed, trying fallback');
-          await this.sendProgressNotice(msg, 'Hit a hiccup with that connection — switching routes and continuing...')
-            .catch((e) => logger.warn({ e }, 'channel send failed'));
+          // Whitelabeled, durable notice: the user sees WHICH provider failed,
+          // WHY (one respectful line, no stack), and WHERE the task continues —
+          // rendered in Mercury Code too (heartbeat rows are filtered there).
+          // Same provider failing twice in one turn does not repeat the line.
+          const failureKey = `${provider.name}:${(err?.message || String(err)).slice(0, 80)}`;
+          if (!noticedProviderFailures.has(failureKey)) {
+            noticedProviderFailures.add(failureKey);
+            const nextName = providerChain[providerChain.indexOf(provider) + 1]?.name;
+            const line = nextName
+              ? `⚠ ${provider.name}: ${whitelabelProviderError(err)} — switching to \`${nextName}\` and continuing.`
+              : `⚠ ${provider.name}: ${whitelabelProviderError(err)} — no fallback left; retrying the chain.`;
+            await this.sendFallbackNotice(msg, line).catch((e) => logger.warn({ e }, 'channel send failed'));
+          }
         }
       }
 
