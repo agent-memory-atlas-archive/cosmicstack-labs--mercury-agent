@@ -79,6 +79,8 @@ import { compactConversation, memoryGovernorThresholds, memoryGovernorVerdict } 
 import { classifyStreamCompletion, isLengthTruncation, truncationContinuationPrompt, toolTruncationContinuationPrompt } from './stream-completion.js';
 import { MAX_EXECUTE_CONTINUATIONS, MAX_VERIFICATION_CONTINUATIONS, executeContinuationPrompt, shouldForceExecuteContinuation, isFailedToolResult, shouldRequireVerification, verificationPrompt, responseAsksUser, isTextDeliverableRequest, EXECUTE_MUTATING_TOOLS, VERIFICATION_COMMAND_PATTERN, wakeUpPrompt } from './execute-guard.js';
 import { classifyTurnEnd, stepsExhaustedPrompt, STEPS_PAUSED_BANNER, WORK_NOT_STARTED_BANNER, type LoopEndCause } from './completion-verdict.js';
+import { buildStatusVerbPrompt, parseStatusVerbs, shouldRefreshStatusVerbs } from './status-verbs.js';
+import { verbPoolFor } from '../ui/status-word.js';
 import { StallWatchdog } from './stall-watchdog.js';
 import { buildFileChangePreview } from '../utils/file-preview.js';
 import { whatsNewText } from '../utils/whats-new.js';
@@ -491,6 +493,11 @@ export class Agent {
   private skillLoader?: SkillLoader;
   readonly backgroundTasks: BackgroundTaskManager;
   private titleGenerationInFlight = new Set<string>();
+  // Mercury Code status-verb refresh (see core/status-verbs.ts): per-session
+  // turn counter + in-flight/disabled markers keep the one-shot LLM call rare.
+  private statusVerbTurnCount = 0;
+  private statusVerbsInFlight = false;
+  private statusVerbsDisabled = false;
   private sessionSyncEnabled = false;
   private readonly workLedger: WorkLedger;
   private currentWorkKey: string | null = null;
@@ -3897,6 +3904,7 @@ export class Agent {
         this.extractMemory(msg.content, finalText).catch(err => {
           logger.warn({ err }, 'Memory extraction failed');
         });
+        this.scheduleStatusVerbRefresh(channel, msg.content);
       }
 
       if (this.currentWorkKey) this.workLedger.markCompleted(this.currentWorkKey, finalText);
@@ -6639,6 +6647,83 @@ Is this productive iteration or a stuck loop?`,
     } catch (error) {
       logger.debug({ sessionId, err: error instanceof Error ? error.message : String(error) }, 'Background session title generation failed');
     }
+  }
+
+  /**
+   * Mercury Code only: at turn end, maybe fire the one-shot LLM status-verb
+   * refresh (cadence in core/status-verbs.ts). Fire-and-forget and unref'd —
+   * the turn is already done; a slow call must never stall anything. Non-code
+   * surfaces are skipped entirely: chat keeps its plain static labels.
+   */
+  private scheduleStatusVerbRefresh(channel: import('../channels/base.js').Channel | null | undefined, userText: string): void {
+    const cliChannel = channel instanceof CLIChannel ? channel : null;
+    if (!cliChannel || cliChannel.getTuiState().mode !== 'mercury-code') return;
+    this.statusVerbTurnCount += 1;
+    const gate = shouldRefreshStatusVerbs({
+      turnCount: this.statusVerbTurnCount,
+      inFlight: this.statusVerbsInFlight,
+      disabled: this.statusVerbsDisabled,
+    });
+    if (!gate.refresh) return;
+    this.statusVerbsInFlight = true;
+    const timer = setTimeout(() => {
+      void this.refreshStatusVerbs(cliChannel, userText).finally(() => {
+        this.statusVerbsInFlight = false;
+      });
+    }, 0);
+    timer.unref?.();
+  }
+
+  private async refreshStatusVerbs(cliChannel: CLIChannel, userText: string): Promise<void> {
+    try {
+      if (this.tokenBudget.canAfford(500)) {
+        const provider = this.providers.getDefault();
+        if (provider && provider.isAvailable()) {
+          const tui = cliChannel.getTuiState();
+          const requests = tui.chatMessages
+            .filter((m) => m.role === 'user' && m.content.trim())
+            .slice(-4)
+            .map((m) => m.content);
+          const { system, prompt } = buildStatusVerbPrompt({
+            userRequests: requests.length > 0 ? requests : [userText],
+            projectName: path.basename(tui.projectContext ?? '') || 'this project',
+            recentActivity: tui.lastStepLog?.map((s) => s.label),
+          });
+          const result = await generateText({
+            model: provider.getModelInstance(),
+            system,
+            messages: [{ role: 'user', content: prompt }],
+            maxOutputTokens: 400,
+          });
+          this.tokenBudget.recordUsage({
+            provider: provider.name,
+            model: provider.getModel(),
+            inputTokens: result.usage?.inputTokens ?? 0,
+            outputTokens: result.usage?.outputTokens ?? 0,
+            totalTokens: (result.usage?.inputTokens ?? 0) + (result.usage?.outputTokens ?? 0),
+            channelType: 'internal',
+            agentId: this.config.cloud.agentId || undefined,
+          });
+          const verbs = parseStatusVerbs(result.text ?? '');
+          if (verbs) {
+            cliChannel.setStatusVerbs(verbs);
+            return;
+          }
+        }
+      }
+      this.failStatusVerbRefresh(cliChannel, userText);
+    } catch (err) {
+      logger.debug({ err }, 'Status-verb refresh failed');
+      this.failStatusVerbRefresh(cliChannel, userText);
+    }
+  }
+
+  /** Push the keyword-engine pool once, then the LLM layer is off this session. */
+  private failStatusVerbRefresh(cliChannel: CLIChannel, userText: string): void {
+    this.statusVerbsDisabled = true;
+    // Never downgrade an LLM pool that already landed.
+    if (cliChannel.getTuiState().statusVerbs) return;
+    cliChannel.setStatusVerbs(verbPoolFor(userText));
   }
 
   private async handleWorkspaceNaturalLanguage(content: string, channelType: string, channelId: string): Promise<boolean> {

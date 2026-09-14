@@ -311,6 +311,13 @@ export interface TuiState {
   exitEscArmed: boolean;
   /** Real-time activity phase (what the agent is doing right now), or null when idle. */
   liveActivity: LiveActivityState | null;
+  /**
+   * Mercury Code status-verb pool for the live status row. null until the
+   * agent's one-shot LLM refinement lands (session start shows the plain
+   * static label); populated with LLM verbs (or the keyword fallback after a
+   * failed generation) and cleared on exitMercuryCode.
+   */
+  statusVerbs: string[] | null;
   /** TUI frame freeze (scroll lock): all frame writes stop so the user can
    * scroll/copy freely while the chat continues underneath. Ctrl+S toggles. */
   tuiFrozen: boolean;
@@ -348,6 +355,7 @@ const defaultState: TuiState = {
   mercuryCode: null,
   exitEscArmed: false,
   liveActivity: null,
+  statusVerbs: null,
   tuiFrozen: false,
   updateAvailable: null,
 };
@@ -1740,6 +1748,16 @@ export class CLIChannel extends BaseChannel {
     this.update({ updateAvailable: latestVersion });
   }
 
+  /**
+   * Push the Mercury Code status-verb pool (agent's one-shot LLM refinement,
+   * or the keyword fallback when that failed). Empty lists are ignored — they
+   * would fall through to the static label anyway.
+   */
+  setStatusVerbs(verbs: string[]): void {
+    if (!Array.isArray(verbs) || verbs.length === 0) return;
+    this.update({ statusVerbs: verbs });
+  }
+
   exitMercuryCode(): void {
     if (this.state.mercuryCode) {
       this.setMouseEnabled(false);
@@ -1752,6 +1770,7 @@ export class CLIChannel extends BaseChannel {
       projectContext: null,
       planProgress: null,
       exitEscArmed: false,
+      statusVerbs: null,
     });
     try {
       process.stdout.write('\x1b[2J\x1b[H');

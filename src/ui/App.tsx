@@ -1232,7 +1232,7 @@ function ChatBody({ state, maxDynamicLines }: { state: TuiState; maxDynamicLines
         </Static>
         <ChatMessagesView messages={dynamicMessages} agentName={state.agentName} maxLines={maxDynamicLines} />
         {state.toolSteps.length > 0 && !state.isThinking && <ToolStepsView steps={state.toolSteps} viewMode={state.viewMode} idle />}
-        {state.isThinking && <ThinkingIndicator agentName={state.agentName} steps={state.toolSteps} mode={state.mode} liveActivity={state.liveActivity} thinkingPreview={state.thinkingPreview} statusWord={pickStatusWord({ userText: lastUserText(state.chatMessages) })} />}
+        {state.isThinking && <ThinkingIndicator agentName={state.agentName} steps={state.toolSteps} mode={state.mode} liveActivity={state.liveActivity} thinkingPreview={state.thinkingPreview} />}
         {state.subAgents.length > 0 && <AgentPanelView agents={state.subAgents} />}
       </Box>
     </Box>
@@ -1282,7 +1282,7 @@ function CodingBody({ state, maxDynamicLines }: { state: TuiState; maxDynamicLin
         </Static>
         <ChatMessagesView messages={dynamicMessages} agentName={state.agentName} maxLines={maxDynamicLines} />
         {state.toolSteps.length > 0 && !state.isThinking && <ToolStepsView steps={state.toolSteps} viewMode={state.viewMode} idle />}
-        {state.isThinking && <ThinkingIndicator agentName={state.agentName} steps={state.toolSteps} mode={state.mode} liveActivity={state.liveActivity} thinkingPreview={state.thinkingPreview} statusWord={pickStatusWord({ userText: lastUserText(state.chatMessages) })} />}
+        {state.isThinking && <ThinkingIndicator agentName={state.agentName} steps={state.toolSteps} mode={state.mode} liveActivity={state.liveActivity} thinkingPreview={state.thinkingPreview} />}
         <Box paddingX={1} marginTop={1}>
           <Text dimColor>Mode shortcuts: Ctrl+P Plan · Ctrl+X Execute (Auto runs by default)</Text>
         </Box>
@@ -1986,7 +1986,7 @@ function ToolStepsView({ steps, viewMode, idle }: { steps: ToolStep[]; viewMode:
   );
 }
 
-function ThinkingIndicator({ agentName, steps, mode, liveActivity, thinkingPreview, frozen, statusWord }: { agentName: string; steps: ToolStep[]; mode: AppMode; liveActivity?: LiveActivityState | null; thinkingPreview?: string | null; frozen?: boolean; statusWord?: string }) {
+function ThinkingIndicator({ agentName, steps, mode, liveActivity, thinkingPreview, frozen }: { agentName: string; steps: ToolStep[]; mode: AppMode; liveActivity?: LiveActivityState | null; thinkingPreview?: string | null; frozen?: boolean }) {
   const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   const [frame, setFrame] = React.useState(0);
   const [elapsed, setElapsed] = React.useState(0);
@@ -2036,7 +2036,7 @@ function ThinkingIndicator({ agentName, steps, mode, liveActivity, thinkingPrevi
       <Box>
         <Text color={actionTone === 'white' ? 'cyan' : actionTone}>{spinner}</Text>
         <Text> </Text>
-        <Text color="cyan" bold>{statusWord ?? 'Processing'}</Text>
+        <Text color="cyan" bold>Processing</Text>
         <Text dimColor>{totalSteps > 0 ? ` · step ${totalSteps} · ${timeStr}` : ` · ${timeStr}`}</Text>
       </Box>
       <Box marginLeft={4}>
@@ -2411,14 +2411,17 @@ function MercuryLiveFeedback({ state }: { state: TuiState }): React.ReactNode {
   const mins = Math.floor(elapsedSec / 60);
   const secs = elapsedSec % 60;
   const timeStr = mins > 0 ? `${mins}m${String(secs).padStart(2, '0')}s` : `${secs}s`;
-  // Status word: a contextual, playful -ing verb keyed on the user's request
-  // ("Painting the UI") replaces the generic phase labels — informative
-  // phases (provider calls, real tool labels) stay as-is. Zero LLM tokens:
-  // pure keyword matching, rotating slowly so the status feels alive.
+  // Status word: Mercury Code's live status row. Session start has no
+  // persona yet, so it shows the plain static label; once the agent's
+  // one-shot LLM refinement lands (statusVerbs), the row rotates verbs
+  // written for THIS project's actual work. Informative phases (provider
+  // calls, real tool labels) always win over any of these.
   const tick = Date.now();
   const statusWord = state.programmingMode === 'plan'
     ? PLANNING_VERBS[Math.floor(tick / 12_000) % PLANNING_VERBS.length]
-    : pickStatusWord({ userText: lastUserText(state.chatMessages) }, tick);
+    : state.statusVerbs && state.statusVerbs.length > 0
+      ? pickStatusWord({ userText: lastUserText(state.chatMessages), dynamicVerbs: state.statusVerbs }, tick)
+      : 'Working';
   const phase = (activity?.phase && !GENERIC_PHASES.has(activity.phase) ? activity.phase : null)
     ?? (running
       ? running.label

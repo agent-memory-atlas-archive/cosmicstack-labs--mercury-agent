@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GENERIC_PHASES, PLANNING_VERBS, lastUserText, pickStatusWord } from './status-word.js';
+import { GENERIC_PHASES, PLANNING_VERBS, lastUserText, pickStatusWord, verbPoolFor } from './status-word.js';
 import type { ChatMessage } from './types.js';
 
 /**
@@ -62,5 +62,38 @@ describe('contextual status words', () => {
   it('generic phases are enumerable — the status word replaces exactly these', () => {
     expect(GENERIC_PHASES.has('Working')).toBe(true);
     expect(GENERIC_PHASES.has('Calling deepseek')).toBe(false);
+  });
+
+  it('a dynamic (LLM) pool fully replaces the keyword pools', () => {
+    const dynamic = ['Extracting the parser', 'Rerouting the auth flow', 'Wiring the contract tests'];
+    // Even a strongly keyword-matched request ("fix the flaky test") must NOT
+    // pull from the keyword pools while the LLM pool is live.
+    const a = pickStatusWord({ userText: 'fix the flaky test', dynamicVerbs: dynamic }, 0);
+    const b = pickStatusWord({ userText: 'fix the flaky test', dynamicVerbs: dynamic }, 12_000);
+    expect(dynamic).toContain(a);
+    expect(dynamic).toContain(b);
+    expect(a).not.toBe(b); // the 12s bucket rotates within the pool
+    // And it is stable within a bucket (no flicker), as with keyword pools.
+    expect(a).toBe(pickStatusWord({ userText: 'fix the flaky test', dynamicVerbs: dynamic }, 11_999));
+  });
+
+  it('dynamic pool rotates deterministically and never returns outside it', () => {
+    const dynamic = ['A', 'B', 'C'];
+    for (let i = 0; i < 10; i++) {
+      expect(dynamic).toContain(pickStatusWord({ userText: 'anything', dynamicVerbs: dynamic }, i * 3_141));
+    }
+  });
+
+  it('empty dynamic pool falls back to the keyword engine', () => {
+    const word = pickStatusWord({ userText: 'fix the flaky test in auth', dynamicVerbs: [] }, 1_000);
+    expect(word).toMatch(/bug|culprit|knot|trace|gauntlet|edge|test|suite/i);
+  });
+
+  it('verbPoolFor returns the matched keyword pool (the failure fallback)', () => {
+    expect(verbPoolFor('improve the UI design of the download manager')).toEqual(
+      verbPoolFor('improve the UI design of the download manager'),
+    );
+    expect(verbPoolFor('improve the UI design').every((v) => /UI|layout|pixels|interface|screens/i.test(v))).toBe(true);
+    expect(verbPoolFor('do the thing with the widgets').length).toBeGreaterThan(0);
   });
 });

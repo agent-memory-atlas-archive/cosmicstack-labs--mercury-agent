@@ -2,12 +2,16 @@ import type { ChatMessage } from './types.js';
 
 /**
  * Contextual status words for the live spinner rows ("Processing" →
- * "Painting the UI"). Pure string matching against the user's request text —
- * ZERO LLM tokens, zero latency, deterministic per task with slow rotation
- * so the word feels alive without flickering.
+ * "Painting the UI"). Mercury Code only — the chat surfaces stay static.
  *
- * One-shot LLM generation could layer on top later (one tiny call per task,
- * overriding the keyword pick); the keyword engine stays the fallback.
+ * Two layers:
+ * - LLM-generated session verbs (dynamicVerbs): one tiny call per session,
+ *   phrases written for the project's actual work. Preferred when present.
+ * - This keyword engine: pure string matching, ZERO LLM tokens — the
+ *   fallback when the LLM call never happened or failed.
+ *
+ * Both rotate deterministically with a slow tick so the word feels alive
+ * without flickering.
  */
 
 interface VerbGroup {
@@ -83,16 +87,17 @@ function hash(text: string): number {
 export interface StatusWordContext {
   /** The user's request for the current task (keyword-matching source). */
   userText?: string;
+  /**
+   * LLM-generated verb pool for the session (Mercury Code only). When
+   * non-empty it fully replaces the keyword pools — these verbs were written
+   * for THIS project's actual work, so they are always more specific than a
+   * keyword guess. The keyword engine stays the fallback when no pool exists.
+   */
+  dynamicVerbs?: string[];
 }
 
-/**
- * Pick a playful -ing status word for the current work. Deterministic per
- * (task text, rotation bucket): different tasks start on different verbs, and
- * the verb rotates slowly within its pool so the status feels alive. Never
- * throws, never empty, always suitable as a spinner label.
- */
-export function pickStatusWord(ctx: StatusWordContext = {}, tick = Date.now()): string {
-  const text = (ctx.userText ?? '').toLowerCase();
+/** Keyword-group match shared by pickStatusWord and verbPoolFor. */
+function matchVerbGroup(text: string): VerbGroup | null {
   let best: VerbGroup | null = null;
   let bestHits = 0;
   for (const group of VERB_GROUPS) {
@@ -105,7 +110,30 @@ export function pickStatusWord(ctx: StatusWordContext = {}, tick = Date.now()): 
       bestHits = hits;
     }
   }
-  const pool = best?.verbs ?? GENERIC_VERBS;
+  return best;
+}
+
+/**
+ * The keyword pool for a request — the static fallback the agent pushes as
+ * `statusVerbs` when the one-shot LLM refinement fails, so the session keeps
+ * contextual (if less specific) words instead of nothing.
+ */
+export function verbPoolFor(userText: string): string[] {
+  const best = matchVerbGroup((userText ?? '').toLowerCase());
+  return best?.verbs ?? GENERIC_VERBS;
+}
+
+/**
+ * Pick a playful -ing status word for the current work. Deterministic per
+ * (task text, rotation bucket): different tasks start on different verbs, and
+ * the verb rotates slowly within its pool so the status feels alive. Never
+ * throws, never empty, always suitable as a spinner label.
+ */
+export function pickStatusWord(ctx: StatusWordContext = {}, tick = Date.now()): string {
+  const text = (ctx.userText ?? '').toLowerCase();
+  const pool = (ctx.dynamicVerbs && ctx.dynamicVerbs.length > 0 ? ctx.dynamicVerbs : null)
+    ?? matchVerbGroup(text)?.verbs
+    ?? GENERIC_VERBS;
   return pool[(hash(text) + Math.floor(tick / ROTATE_MS)) % pool.length];
 }
 
