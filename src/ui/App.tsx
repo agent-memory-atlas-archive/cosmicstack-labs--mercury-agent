@@ -9,6 +9,7 @@ import { renderMarkdown } from '../utils/markdown.js';
 import { highlightCodeBlock } from '../utils/highlight.js';
 import { normalizeTerminalText, getViewportWindow } from './terminal-viewport.js';
 import { buildMercuryMessageLines, buildMercuryBrandLines, buildStreamTailLines, parseChunkIndex, splitFinalMessage, splitStreamingMessage, type MercuryTranscriptLine } from './mercury-transcript.js';
+import { GENERIC_PHASES, PLANNING_VERBS, lastUserText, pickStatusWord } from './status-word.js';
 import { PLAYER_CONTROLS, formatNowPlaying } from '../spotify/ui.js';
 import type { SpotifyClient } from '../spotify/client.js';
 import type { SubAgentStatus } from '../types/agent.js';
@@ -1225,7 +1226,7 @@ function ChatBody({ state, maxDynamicLines }: { state: TuiState; maxDynamicLines
         </Static>
         <ChatMessagesView messages={dynamicMessages} agentName={state.agentName} maxLines={maxDynamicLines} />
         {state.toolSteps.length > 0 && !state.isThinking && <ToolStepsView steps={state.toolSteps} viewMode={state.viewMode} idle />}
-        {state.isThinking && <ThinkingIndicator agentName={state.agentName} steps={state.toolSteps} mode={state.mode} liveActivity={state.liveActivity} thinkingPreview={state.thinkingPreview} />}
+        {state.isThinking && <ThinkingIndicator agentName={state.agentName} steps={state.toolSteps} mode={state.mode} liveActivity={state.liveActivity} thinkingPreview={state.thinkingPreview} statusWord={pickStatusWord({ userText: lastUserText(state.chatMessages) })} />}
         {state.subAgents.length > 0 && <AgentPanelView agents={state.subAgents} />}
       </Box>
     </Box>
@@ -1275,7 +1276,7 @@ function CodingBody({ state, maxDynamicLines }: { state: TuiState; maxDynamicLin
         </Static>
         <ChatMessagesView messages={dynamicMessages} agentName={state.agentName} maxLines={maxDynamicLines} />
         {state.toolSteps.length > 0 && !state.isThinking && <ToolStepsView steps={state.toolSteps} viewMode={state.viewMode} idle />}
-        {state.isThinking && <ThinkingIndicator agentName={state.agentName} steps={state.toolSteps} mode={state.mode} liveActivity={state.liveActivity} thinkingPreview={state.thinkingPreview} />}
+        {state.isThinking && <ThinkingIndicator agentName={state.agentName} steps={state.toolSteps} mode={state.mode} liveActivity={state.liveActivity} thinkingPreview={state.thinkingPreview} statusWord={pickStatusWord({ userText: lastUserText(state.chatMessages) })} />}
         <Box paddingX={1} marginTop={1}>
           <Text dimColor>Mode shortcuts: Ctrl+P Plan · Ctrl+X Execute (Auto runs by default)</Text>
         </Box>
@@ -1979,7 +1980,7 @@ function ToolStepsView({ steps, viewMode, idle }: { steps: ToolStep[]; viewMode:
   );
 }
 
-function ThinkingIndicator({ agentName, steps, mode, liveActivity, thinkingPreview, frozen }: { agentName: string; steps: ToolStep[]; mode: AppMode; liveActivity?: LiveActivityState | null; thinkingPreview?: string | null; frozen?: boolean }) {
+function ThinkingIndicator({ agentName, steps, mode, liveActivity, thinkingPreview, frozen, statusWord }: { agentName: string; steps: ToolStep[]; mode: AppMode; liveActivity?: LiveActivityState | null; thinkingPreview?: string | null; frozen?: boolean; statusWord?: string }) {
   const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   const [frame, setFrame] = React.useState(0);
   const [elapsed, setElapsed] = React.useState(0);
@@ -2029,7 +2030,7 @@ function ThinkingIndicator({ agentName, steps, mode, liveActivity, thinkingPrevi
       <Box>
         <Text color={actionTone === 'white' ? 'cyan' : actionTone}>{spinner}</Text>
         <Text> </Text>
-        <Text color="cyan" bold>{totalSteps > 0 ? 'Processing' : 'Processing'}</Text>
+        <Text color="cyan" bold>{statusWord ?? 'Processing'}</Text>
         <Text dimColor>{totalSteps > 0 ? ` · step ${totalSteps} · ${timeStr}` : ` · ${timeStr}`}</Text>
       </Box>
       <Box marginLeft={4}>
@@ -2376,11 +2377,19 @@ function MercuryLiveFeedback({ state }: { state: TuiState }): React.ReactNode {
   const mins = Math.floor(elapsedSec / 60);
   const secs = elapsedSec % 60;
   const timeStr = mins > 0 ? `${mins}m${String(secs).padStart(2, '0')}s` : `${secs}s`;
-  const phase = activity?.phase
+  // Status word: a contextual, playful -ing verb keyed on the user's request
+  // ("Painting the UI") replaces the generic phase labels — informative
+  // phases (provider calls, real tool labels) stay as-is. Zero LLM tokens:
+  // pure keyword matching, rotating slowly so the status feels alive.
+  const tick = Date.now();
+  const statusWord = state.programmingMode === 'plan'
+    ? PLANNING_VERBS[Math.floor(tick / 12_000) % PLANNING_VERBS.length]
+    : pickStatusWord({ userText: lastUserText(state.chatMessages) }, tick);
+  const phase = (activity?.phase && !GENERIC_PHASES.has(activity.phase) ? activity.phase : null)
     ?? (running
       ? running.label
       : state.isThinking
-        ? (state.programmingMode === 'plan' ? 'Analyzing' : 'Working')
+        ? statusWord
         : null);
   const detail = activity?.detail ?? null;
   const stepsDone = activity?.stepsDone ?? 0;
