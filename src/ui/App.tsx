@@ -2543,8 +2543,13 @@ function MercuryCodeExitConfirm({ boxWidth }: { boxWidth: number }): React.React
 const MERCURY_BRAND_ITEM_KEY = '__mercury_code_brand__';
 
 /** One formatted transcript row (shared by the brand block, Static items, and the live stream tail). */
-function MercuryTranscriptRow({ line }: { line: MercuryTranscriptLine }): React.ReactNode {
+function MercuryTranscriptRow({ line, streaming }: { line: MercuryTranscriptLine; streaming?: boolean }): React.ReactNode {
   const roleColor = line.role === 'user' ? 'yellow' : line.role === 'agent' ? 'cyan' : 'gray';
+  // The `│` rule is the settled-transcript look. While a message is still
+  // streaming, its live tail omits the rule — partial markdown re-parses
+  // every frame there, and the rule made those glitches visible. The same
+  // rows gain the rule automatically once they settle into <Static>.
+  const rule = streaming ? null : <Text color={roleColor}>│ </Text>;
   if (line.kind === 'brand') {
     // Indent is baked into the text for exact centering.
     return (
@@ -2573,7 +2578,7 @@ function MercuryTranscriptRow({ line }: { line: MercuryTranscriptLine }): React.
   if (line.kind === 'code-label') {
     return (
       <Box paddingX={2}>
-        <Text color={roleColor}>│ </Text><Text dimColor>┌─ {line.text}</Text>
+        {rule}<Text dimColor>┌─ {line.text}</Text>
       </Box>
     );
   }
@@ -2581,7 +2586,7 @@ function MercuryTranscriptRow({ line }: { line: MercuryTranscriptLine }): React.
     const highlighted = highlightCodeBlock(line.text, line.lang)[0] ?? line.text;
     return (
       <Box paddingX={2}>
-        <Text color={roleColor}>│ </Text><Text>{highlighted || ' '}</Text>
+        {rule}<Text>{highlighted || ' '}</Text>
       </Box>
     );
   }
@@ -2602,7 +2607,7 @@ function MercuryTranscriptRow({ line }: { line: MercuryTranscriptLine }): React.
   }
   return (
     <Box paddingX={2}>
-      <Text color={roleColor}>│ </Text><Text>{line.text || ' '}</Text>
+      {rule}<Text>{line.text || ' '}</Text>
     </Box>
   );
 }
@@ -2803,7 +2808,7 @@ export function MercuryCodeView({
       </Static>
       {streamTailRows.length > 0 && (
         <Box flexDirection="column" flexShrink={0}>
-          {streamTailRows.map((line) => <MercuryTranscriptRow key={line.key} line={line} />)}
+          {streamTailRows.map((line) => <MercuryTranscriptRow key={line.key} line={line} streaming />)}
         </Box>
       )}
       {showHints && <MercuryCodeHints cols={cols} />}
