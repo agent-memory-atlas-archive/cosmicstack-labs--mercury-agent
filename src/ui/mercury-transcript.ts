@@ -1,4 +1,5 @@
 import type { ChatMessage } from './types.js';
+import { TASK_SUMMARY_FILE_LIMIT } from './types.js';
 import { normalizeTerminalText } from './terminal-viewport.js';
 import { renderMarkdown } from '../utils/markdown.js';
 import { renderMercuryCodeParts } from './pixel-logo.js';
@@ -354,9 +355,16 @@ export function buildMercuryMessageLines(
 
   if (message.fileChanges?.length) {
     push('system', `FILES CHANGED · ${message.fileChanges.length}`);
-    for (const file of message.fileChanges) {
+    // End-of-task summary rule: list at most TASK_SUMMARY_FILE_LIMIT paths —
+    // the count line above still shows the full number, the complete list
+    // lives in git.
+    const files = message.fileChanges;
+    for (const file of files.slice(0, TASK_SUMMARY_FILE_LIMIT)) {
       const stats = file.added == null || file.removed == null ? 'binary' : `+${file.added} -${file.removed}`;
       for (const line of wrapMercuryText(`${file.path}  ${stats}`, contentWidth)) push('file', line);
+    }
+    if (files.length > TASK_SUMMARY_FILE_LIMIT) {
+      push('file', `… ${files.length - TASK_SUMMARY_FILE_LIMIT} more`);
     }
   }
   push('spacer', '');

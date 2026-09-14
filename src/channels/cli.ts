@@ -10,6 +10,7 @@ import { STEPS_PAUSED_BANNER, NO_CHANGES_BANNER } from '../core/completion-verdi
 import { logger } from '../utils/logger.js';
 import { formatToolStep, formatToolResult } from '../utils/tool-label.js';
 import type { ChatMessage, CompletionMeta, FileChangeSummary, ToolStep, PermissionPromptState, CurrentSessionInfo, SidebarSection, SkillInfo, SubAgentInfo, ProviderInfo, TokenInfo, SaverInfo, AppMode, WorkspaceState, WorkspaceTreeNode, WorkspaceGitFile, BackgroundTaskInfo, MercuryCodeGitState, MercuryCodeState, LiveActivityState, PlanStep } from '../ui/types.js';
+import { TASK_SUMMARY_FILE_LIMIT } from '../ui/types.js';
 import { TuiApp } from '../ui/App.js';
 import { ResilientTuiOutput } from '../ui/resilient-output.js';
 
@@ -21,6 +22,47 @@ import { ResilientTuiOutput } from '../ui/resilient-output.js';
  * ("<0;34;12M") into the input box as garbage text.
  */
 const MOUSE_SEQ_RE = /\x1b\[<\d+;\d+;\d+[Mm]|\x1b\[M[\x20-\x2f]*[\x40-\x6f]|\x1b\[\?100[0-7][hl]/g;
+
+/**
+ * Markdown summary appended to the Mercury Code completion banner: what was
+ * done (a few bullets), how many files changed (paths capped at
+ * TASK_SUMMARY_FILE_LIMIT — the full list lives in git), and the next steps
+ * the developer might need to take. Short by design: the agent's full
+ * narration is already in the response above the banner.
+ */
+export function buildTaskSummary(opts: {
+  fileChanges: FileChangeSummary[];
+  doneSteps: string[];
+  verified: boolean;
+  uncommitted: boolean;
+}): string {
+  const lines: string[] = [];
+
+  const steps = opts.doneSteps.filter((label) => label.trim().length > 0).slice(0, 5);
+  if (steps.length > 0) {
+    lines.push('**What was done**');
+    for (const label of steps) lines.push(`• ${label}`);
+  }
+
+  if (opts.fileChanges.length > 0) {
+    const n = opts.fileChanges.length;
+    lines.push(`**Changes** · ${n} file${n !== 1 ? 's' : ''}${n > TASK_SUMMARY_FILE_LIMIT ? ` (showing ${TASK_SUMMARY_FILE_LIMIT})` : ''}`);
+    // Paths render below as the banner's file rows (also capped) — the count
+    // line here keeps the at-a-glance number even when the list is trimmed.
+  }
+
+  const next: string[] = [];
+  if (opts.fileChanges.length > 0) {
+    if (!opts.verified) next.push('Run your test suite — these changes are not verified yet');
+    if (opts.uncommitted) next.push('Review the diff (`git diff`), then commit when ready');
+  }
+  if (next.length > 0) {
+    lines.push('**Next steps**');
+    for (const step of next) lines.push(`• ${step}`);
+  }
+
+  return lines.join('\n');
+}
 
 /**
  * Parsed mouse event from an SGR/X10 sequence.
@@ -1042,17 +1084,23 @@ export class CLIChannel extends BaseChannel {
     if (content.startsWith('Task complete') && fileChanges && fileChanges.length === 0) {
       content = NO_CHANGES_BANNER + (parts ? ` · ${parts}` : '');
     }
-    // Change summary: what was done, per file, and the verification that
-    // proves it — the developer reads this instead of diffing manually.
+    // End-of-task summary: what was done (a few bullets from the plan or the
+    // tool steps), how many files changed (paths render below as the banner's
+    // file rows, capped at TASK_SUMMARY_FILE_LIMIT), and what the developer
+    // might need to do next. The developer reads this instead of diffing
+    // manually.
     if (fileChanges && fileChanges.length > 0) {
-      const lines: string[] = [];
-      for (const f of fileChanges.slice(0, 8)) {
-        const stats = f.added == null || f.removed == null ? 'new' : `+${f.added} −${f.removed}`;
-        lines.push(`  ↳ ${f.path} · ${stats}`);
-      }
-      if (fileChanges.length > 8) lines.push(`  ↳ … ${fileChanges.length - 8} more`);
-      if (verificationNote) lines.push(`  ✓ Verified: ${verificationNote}`);
-      content += `\n\nChanges made:\n${lines.join('\n')}`;
+      const planSteps = (this.state.planProgress ?? []).filter((s) => s.status === 'done').map((s) => s.label);
+      const doneSteps = planSteps.length > 0
+        ? planSteps
+        : [...new Set(this.state.toolSteps.filter((s) => s.status !== 'error').map((s) => s.label))];
+      content += `\n\n${buildTaskSummary({
+        fileChanges,
+        doneSteps,
+        verified: !!verificationNote,
+        uncommitted: (this.state.mercuryCode?.git.dirty ?? 0) > 0,
+      })}`;
+      if (verificationNote) content += `\n✓ Verified: ${verificationNote}`;
     }
 
     const msg: ChatMessage = {

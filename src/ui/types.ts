@@ -86,6 +86,11 @@ export interface FileChangeSummary {
   removed: number | null;
 }
 
+/** Max file paths listed in the end-of-task summary (banner summary line and
+ * transcript file rows alike) — the count line still shows the full number;
+ * the complete list lives in git. */
+export const TASK_SUMMARY_FILE_LIMIT = 5;
+
 export interface ToolStep {
   id: string;
   toolName: string;
