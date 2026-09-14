@@ -41,4 +41,16 @@ describe('choice prompt timeout / dismissal', () => {
     expect(agentSrc).toContain('promptMercuryCodeHandoff');
     expect(agentSrc).toMatch(/promptMercuryCodeHandoff\(channel: CLIChannel[\s\S]*?this\.queueMessage\(msg, workKey\);\s*\n\s*this\.processQueue\(\);/s);
   });
+
+  it('agent: the choice is remembered PER SESSION and every auto-switch explains itself', () => {
+    // Preference keyed by the canonical session id → a new session asks again.
+    expect(agentSrc).toMatch(/getOrCreateBound\(msg\.channelType, 'current'[\s\S]*?\.id;\s*\n\s*const remembered = /s);
+    expect(agentSrc).toContain('mercuryCodeHandoffPreferences');
+    // Remembered "No" → never asks this session.
+    expect(agentSrc).toMatch(/remembered === 'chat'[\s\S]*?this\.queueMessage\(msg, workKey\);\s*\n\s*this\.processQueue\(\);/s);
+    // Remembered "Yes" → auto-switch WITH the reason.
+    expect(agentSrc).toMatch(/remembered === 'code'[\s\S]*?you chose it for coding tasks earlier this session/s);
+    // Timeout is NOT a choice — nothing remembered when nobody answers.
+    expect(agentSrc).toContain('not remembered — nobody answered');
+  });
 });

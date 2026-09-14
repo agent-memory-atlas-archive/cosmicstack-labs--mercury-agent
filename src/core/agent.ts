@@ -624,37 +624,71 @@ export class Agent {
   }
 
   /**
-   * Mercury Code hand-off: in the normal chat TUI, a coding-shaped task may be
-   * better served by the full-screen coding TUI. Ask ONCE with a timeout — an
-   * unanswered prompt resolves to "keep chatting" after
-   * MERCURY_CODE_HANDOFF_TIMEOUT_MS so the request is never left blocked.
-   * Only the CLI TUI is prompted (Mercury Code is a terminal surface; other
-   * channels just keep chatting).
+   * Mercury Code hand-off, with SESSION memory (like the session permission
+   * modes): an explicit Yes/No is remembered for the current session —
+   *
+   *   'code'  → later coding tasks auto-switch to Mercury Code, and every
+   *            automatic switch says WHY ("you chose it earlier this session")
+   *   'chat'  → later coding tasks never ask; they continue in normal chat
+   *
+   * A TIMEOUT is not a choice — nothing is remembered, and the next coding
+   * task asks again. The prompt itself still has a timeout so the request is
+   * never left blocked.
    */
   private async promptMercuryCodeHandoff(channel: CLIChannel, msg: ChannelMessage, workKey?: string): Promise<void> {
-    const choice = await this.presentChoiceWithTimeout(
-      'This looks like a coding task. Open it in Mercury Code (full-screen coding TUI — plan + build in one flow)?',
-      ['Yes — switch to Mercury Code and continue there', 'No — continue in normal chat'],
-      msg.channelId,
-      msg.channelType,
-      MERCURY_CODE_HANDOFF_TIMEOUT_MS,
-      1, // time-weighted default: No
-    );
+    const preferenceKey = this.sessions.getOrCreateBound(msg.channelType, 'current', msg.sessionId ?? undefined).id;
+    const remembered = this.mercuryCodeHandoffPreferences.get(preferenceKey);
 
-    if (choice.startsWith('Yes')) {
+    if (remembered === 'chat') {
+      // Remembered "No": keep chatting, never ask again this session.
+      this.queueMessage(msg, workKey);
+      this.processQueue();
+      return;
+    }
+    if (remembered === 'code') {
+      // Remembered "Yes": switch back automatically — and say why.
       const cwd = this.capabilities.getCwd();
       const entered = channel.enterMercuryCode(cwd, channel.getTuiState().version || 'dev');
       if (entered.ok) {
-        this.programmingMode.setAuto();
-        this.programmingMode.setProjectContext(cwd);
-        channel.setProgrammingStatus(this.programmingMode.getState(), this.programmingMode.getProjectContext());
-        await channel.send('Mercury Code active (AUTO) — continuing your request here.', msg.channelId).catch(() => {});
+        this.syncProgrammingModeForCode(cwd, channel);
+        await channel.send('Switching to Mercury Code — you chose it for coding tasks earlier this session.', msg.channelId).catch(() => {});
+      }
+      this.queueMessage(msg, workKey);
+      this.processQueue();
+      return;
+    }
+
+    const choice = await this.presentChoiceWithTimeout(
+      'This looks like a coding task. Open it in Mercury Code (full-screen coding TUI — plan + build in one flow)?',
+      ['Yes — switch to Mercury Code (remembered for this session)', 'No — continue in normal chat (not asked again this session)'],
+      msg.channelId,
+      msg.channelType,
+      MERCURY_CODE_HANDOFF_TIMEOUT_MS,
+      1, // time-weighted default: No (not remembered — nobody answered)
+    );
+
+    if (choice.startsWith('Yes')) {
+      this.mercuryCodeHandoffPreferences.set(preferenceKey, 'code');
+      const cwd = this.capabilities.getCwd();
+      const entered = channel.enterMercuryCode(cwd, channel.getTuiState().version || 'dev');
+      if (entered.ok) {
+        this.syncProgrammingModeForCode(cwd, channel);
+        await channel.send('Mercury Code active (AUTO) — continuing your request here. I\'ll open it automatically for coding tasks for the rest of this session.', msg.channelId).catch(() => {});
       } else {
         await channel.send(`Could not open Mercury Code (${entered.message}) — continuing in normal chat.`, msg.channelId).catch(() => {});
       }
+    } else {
+      await channel.send('Continuing in normal chat — I won\'t ask again this session.', msg.channelId).catch(() => {});
     }
     this.queueMessage(msg, workKey);
     this.processQueue();
+  }
+
+  /** AUTO flow + project context, mirrored from the /code handler. */
+  private syncProgrammingModeForCode(cwd: string, channel: CLIChannel): void {
+    this.programmingMode.setAuto();
+    this.programmingMode.setProjectContext(cwd);
+    channel.setProgrammingStatus(this.programmingMode.getState(), this.programmingMode.getProjectContext());
   }
 
   /**
@@ -1458,6 +1492,11 @@ export class Agent {
   private channelProviderOverrides = new Map<string, { providerName: string; modelName: string; provider: BaseProvider }>();
   /** Dedupes the "served by a fallback provider" notice — one per (default → served) pair per runtime. */
   private lastFallbackNoticeKey: string | null = null;
+  /** Mercury Code hand-off preference, remembered PER SESSION (like the
+   * session permission modes): 'code' = auto-switch on coding tasks, 'chat' =
+   * never ask in this session. Only EXPLICIT answers are remembered — a
+   * timeout (nobody answered) asks again on the next coding task. */
+  private mercuryCodeHandoffPreferences = new Map<string, 'chat' | 'code'>();
 
   async listChatModelOptions(): Promise<Array<{ provider: string; label: string; model: string; models: string[]; selected: boolean }>> {
     const active = getActiveProviders(this.config);
