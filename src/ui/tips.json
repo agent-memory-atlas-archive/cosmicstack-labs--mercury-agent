@@ -1,0 +1,132 @@
+[
+  {
+    "id": "code-freeze",
+    "surfaces": ["code"],
+    "tip": "Press Ctrl+S while a response streams to freeze the TUI — scroll, read, and copy freely; the chat keeps running underneath."
+  },
+  {
+    "id": "code-esc-esc",
+    "surfaces": ["code"],
+    "tip": "Esc twice starts the exit — Esc once arms it, Esc again opens the confirm box, and Ctrl+D force-quits without asking."
+  },
+  {
+    "id": "code-ctrl-b",
+    "surfaces": ["code"],
+    "tip": "Ctrl+B moves the current task to the background — it keeps working and reports back when it finishes."
+  },
+  {
+    "id": "code-stop",
+    "surfaces": ["code"],
+    "tip": "Type /stop to cancel a long task outright. Its work entry is closed, so a restart will not resume it — send the request again for a fresh start."
+  },
+  {
+    "id": "code-plan-execute",
+    "surfaces": ["code"],
+    "tip": "Ctrl+P and Ctrl+X flip Mercury Code between PLAN and EXECUTE — plan first, execute only what you approved."
+  },
+  {
+    "id": "code-diff",
+    "surfaces": ["code"],
+    "tip": "Press Ctrl+G (or /code diff) to see exactly what changed on disk before you commit."
+  },
+  {
+    "id": "code-multiline",
+    "surfaces": ["code"],
+    "tip": "Ctrl+N inserts a newline in the input box — describe multi-part changes in one go."
+  },
+  {
+    "id": "code-wheel",
+    "surfaces": ["code"],
+    "tip": "The full transcript lives in your terminal's own scrollback — wheel-scroll it and drag to select text like any other output."
+  },
+  {
+    "id": "code-step-log",
+    "surfaces": ["code"],
+    "tip": "Ctrl+D after a task shows its step log — every command that ran and what it returned."
+  },
+  {
+    "id": "code-summary",
+    "surfaces": ["code"],
+    "tip": "The completion banner recaps the task: what was done, how many files changed, and the next steps it suggests."
+  },
+  {
+    "id": "code-history",
+    "surfaces": ["code"],
+    "tip": "Press ↑ in the input box to walk back through your previous prompts."
+  },
+  {
+    "id": "both-whatsnew",
+    "surfaces": ["code", "chat"],
+    "tip": "/whatsnew shows what changed in this Mercury version, with the release-notes link."
+  },
+  {
+    "id": "both-sessions",
+    "surfaces": ["code", "chat"],
+    "tip": "/sessions lists your sessions; /session new starts a clean one without losing the old."
+  },
+  {
+    "id": "both-budget",
+    "surfaces": ["code", "chat"],
+    "tip": "/budget shows and manages your daily token budget — override, reset, or set a new cap."
+  },
+  {
+    "id": "both-permissions",
+    "surfaces": ["code", "chat"],
+    "tip": "/permissions switches the session permission mode — allow-all for the session, or ask-me for every change."
+  },
+  {
+    "id": "both-models",
+    "surfaces": ["code", "chat"],
+    "tip": "/models use <provider> switches the default model — saved across restarts."
+  },
+  {
+    "id": "both-log",
+    "surfaces": ["code", "chat"],
+    "tip": "Ctrl+D (or /log) prints the last task's step log after it finished."
+  },
+  {
+    "id": "both-view",
+    "surfaces": ["code", "chat"],
+    "tip": "Ctrl+T toggles balanced and detailed views of tool steps."
+  },
+  {
+    "id": "chat-code",
+    "surfaces": ["chat"],
+    "tip": "Type /code in normal chat to jump into Mercury Code — the full-screen coding TUI in the current directory."
+  },
+  {
+    "id": "chat-menu",
+    "surfaces": ["chat"],
+    "tip": "Type / to open the command picker with arrow-key navigation — every command is in there."
+  },
+  {
+    "id": "chat-bg",
+    "surfaces": ["chat"],
+    "tip": "Long task? /bg current sends it to the background and /bg list shows what's running."
+  },
+  {
+    "id": "chat-stop",
+    "surfaces": ["chat"],
+    "tip": "A task you don't want anymore? /stop ends it immediately — no waiting."
+  },
+  {
+    "id": "chat-whatsnew",
+    "surfaces": ["chat"],
+    "tip": "After an update, type /whatsnew — one friendly list of what changed."
+  },
+  {
+    "id": "chat-telegram",
+    "surfaces": ["chat"],
+    "tip": "Mercury also lives in Telegram — /pair links your account and you can chat from your phone."
+  },
+  {
+    "id": "both-skills",
+    "surfaces": ["code", "chat"],
+    "tip": "/skills lists installed skills; /skills search <query> finds more to install."
+  },
+  {
+    "id": "both-status",
+    "surfaces": ["code", "chat"],
+    "tip": "/status shows your setup at a glance — provider, budget, channels, skills."
+  }
+]

@@ -12,6 +12,7 @@ import { formatToolStep, formatToolResult } from '../utils/tool-label.js';
 import type { ChatMessage, CompletionMeta, FileChangeSummary, ToolStep, PermissionPromptState, CurrentSessionInfo, SidebarSection, SkillInfo, SubAgentInfo, ProviderInfo, TokenInfo, SaverInfo, AppMode, WorkspaceState, WorkspaceTreeNode, WorkspaceGitFile, BackgroundTaskInfo, MercuryCodeGitState, MercuryCodeState, LiveActivityState, PlanStep } from '../ui/types.js';
 import { TASK_SUMMARY_FILE_LIMIT } from '../ui/types.js';
 import { TuiApp } from '../ui/App.js';
+import { nextTip } from '../ui/tips.js';
 import { ResilientTuiOutput } from '../ui/resilient-output.js';
 
 /**
@@ -1150,6 +1151,14 @@ export class CLIChannel extends BaseChannel {
       lastStepLog: this.state.toolSteps.length > 0 ? [...this.state.toolSteps] : (this.state.lastStepLog ?? null),
       lastStepLogElapsed: elapsedMs,
     });
+    // "Did you know?" perk: a natural pause (task just finished, nothing
+    // pending). The picker's internal min-gap keeps it to a rare treat, never
+    // repeated, always in the system's own voice. Mercury Code has its own
+    // rotating tip row — the chat notice only fires in chat surfaces.
+    if (this.state.mode !== 'mercury-code') {
+      const tip = nextTip('chat');
+      if (tip) this.sendSystemNotice(`💡 Did you know? ${tip.tip}`);
+    }
   }
 
   /**

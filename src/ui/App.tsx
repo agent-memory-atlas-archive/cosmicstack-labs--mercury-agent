@@ -10,6 +10,7 @@ import { highlightCodeBlock } from '../utils/highlight.js';
 import { normalizeTerminalText, getViewportWindow } from './terminal-viewport.js';
 import { buildMercuryMessageLines, buildMercuryBrandLines, buildStreamTailLines, parseChunkIndex, splitFinalMessage, splitStreamingMessage, type MercuryTranscriptLine } from './mercury-transcript.js';
 import { GENERIC_PHASES, PLANNING_VERBS, lastUserText, pickStatusWord } from './status-word.js';
+import { nextTip, rotateTip } from './tips.js';
 import { PLAYER_CONTROLS, formatNowPlaying } from '../spotify/ui.js';
 import type { SpotifyClient } from '../spotify/client.js';
 import type { SubAgentStatus } from '../types/agent.js';
@@ -2370,6 +2371,34 @@ function MercuryLiveFeedback({ state }: { state: TuiState }): React.ReactNode {
     }, 100);
     return () => clearInterval(t);
   }, [active, state.mode, state.tuiFrozen]);
+
+  // "Did you know?" tip row: after a minute of a running task, ONE dim tip
+  // appears and its content rotates a couple of times — the row's height is
+  // fixed for the whole stream (truncated), so no scrollback churn.
+  const [tipText, setTipText] = React.useState<string | null>(null);
+  const tipShownAtRef = React.useRef<number>(0);
+  const tipRotationsRef = React.useRef<number>(0);
+  React.useEffect(() => {
+    if (!active || state.mode !== 'mercury-code' || state.tuiFrozen) return;
+    if (!activity?.startedAt || tipText != null) return;
+    if (Date.now() - activity.startedAt < 60_000) return;
+    const tip = rotateTip('code');
+    if (tip) {
+      tipShownAtRef.current = Date.now();
+      setTipText(tip.tip);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- activity identity churns; startedAt is the meaningful dep
+  }, [active, state.mode, state.tuiFrozen, activity?.startedAt, forceTick]);
+  React.useEffect(() => {
+    if (!tipText || tipRotationsRef.current >= 2) return;
+    const t = setInterval(() => {
+      tipRotationsRef.current += 1;
+      const next = rotateTip('code');
+      if (next) setTipText(next.tip);
+      if (tipRotationsRef.current >= 3) clearInterval(t);
+    }, 15_000);
+    return () => clearInterval(t);
+  }, [tipText]);
   if (state.mode !== 'mercury-code') return null;
   if (!active) return null;
 
@@ -2425,6 +2454,11 @@ function MercuryLiveFeedback({ state }: { state: TuiState }): React.ReactNode {
       {!running && state.thinkingPreview && (
         <Box paddingLeft={2}>
           <Text dimColor>  “{state.thinkingPreview.slice(-120)}”</Text>
+        </Box>
+      )}
+      {tipText && (
+        <Box paddingLeft={2}>
+          <Text dimColor wrap="truncate-end">💡 Did you know? {tipText}</Text>
         </Box>
       )}
       {activeAgents.length > 0 && (
