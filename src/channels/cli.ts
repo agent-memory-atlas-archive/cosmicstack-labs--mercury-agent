@@ -9,6 +9,7 @@ import { BaseChannel, type PermissionMode } from './base.js';
 import { STEPS_PAUSED_BANNER, NO_CHANGES_BANNER } from '../core/completion-verdict.js';
 import { logger } from '../utils/logger.js';
 import { formatToolStep, formatToolResult } from '../utils/tool-label.js';
+import { FILE_CHANGE_TOOLS } from '../utils/file-preview.js';
 import type { ChatMessage, CompletionMeta, FileChangeSummary, ToolStep, PermissionPromptState, CurrentSessionInfo, SidebarSection, SkillInfo, SubAgentInfo, ProviderInfo, TokenInfo, SaverInfo, AppMode, WorkspaceState, WorkspaceTreeNode, WorkspaceGitFile, BackgroundTaskInfo, MercuryCodeGitState, MercuryCodeState, LiveActivityState, PlanStep } from '../ui/types.js';
 import { TASK_SUMMARY_FILE_LIMIT } from '../ui/types.js';
 import { TuiApp } from '../ui/App.js';
@@ -39,17 +40,23 @@ export function buildTaskSummary(opts: {
 }): string {
   const lines: string[] = [];
 
+  // Files first — the developer's top question is "what changed?".
+  if (opts.fileChanges.length > 0) {
+    const n = opts.fileChanges.length;
+    lines.push(`**Changes** · ${n} file${n !== 1 ? 's' : ''}${n > TASK_SUMMARY_FILE_LIMIT ? ` (showing ${TASK_SUMMARY_FILE_LIMIT})` : ''}`);
+    for (const f of opts.fileChanges.slice(0, TASK_SUMMARY_FILE_LIMIT)) {
+      const stats = f.added == null || f.removed == null ? 'new' : `+${f.added} −${f.removed}`;
+      lines.push(`  ↳ ${f.path} · ${stats}`);
+    }
+    if (opts.fileChanges.length > TASK_SUMMARY_FILE_LIMIT) {
+      lines.push(`  ↳ … ${opts.fileChanges.length - TASK_SUMMARY_FILE_LIMIT} more`);
+    }
+  }
+
   const steps = opts.doneSteps.filter((label) => label.trim().length > 0).slice(0, 5);
   if (steps.length > 0) {
     lines.push('**What was done**');
     for (const label of steps) lines.push(`• ${label}`);
-  }
-
-  if (opts.fileChanges.length > 0) {
-    const n = opts.fileChanges.length;
-    lines.push(`**Changes** · ${n} file${n !== 1 ? 's' : ''}${n > TASK_SUMMARY_FILE_LIMIT ? ` (showing ${TASK_SUMMARY_FILE_LIMIT})` : ''}`);
-    // Paths render below as the banner's file rows (also capped) — the count
-    // line here keeps the at-a-glance number even when the list is trimmed.
   }
 
   const next: string[] = [];
@@ -371,6 +378,12 @@ export class CLIChannel extends BaseChannel {
   private menuDepth = 0;
   private menuAbortController: AbortController | null = null;
   private heartbeatMsgId: string | null = null;
+
+  // Per-turn file-change attribution: file-tool calls (write/create/edit/
+  // delete) with their args path. Committed entries surface in the completion
+  // banner; a general chat turn that touches no files stays clean.
+  private pendingTurnFiles = new Map<string, string>();
+  private committedTurnFiles = new Set<string>();
 
   /** update-notice helpers, imported lazily (a static import would pull
    * cli/daemon.js into an import cycle through channels/cli.ts). */
@@ -1040,6 +1053,10 @@ export class CLIChannel extends BaseChannel {
    * running with a live elapsed timer while the tool actually runs.
    */
   sendToolEvent(toolName: string, args: Record<string, any>, callId: string): Promise<void> {
+    // File-change attribution: remember the path this file-tool call targets.
+    if (FILE_CHANGE_TOOLS.has(toolName) && typeof args?.path === 'string' && args.path) {
+      this.pendingTurnFiles.set(callId, args.path);
+    }
     const label = formatToolStep(toolName, args);
     // Reuse an existing running step for the same callId (e.g. duplicate start).
     const existing = this.state.toolSteps.find((s) => s.callId === callId && s.status === 'running');
@@ -1073,9 +1090,11 @@ export class CLIChannel extends BaseChannel {
   completeToolEvent(toolName: string, result: unknown, isError: boolean, durationMs?: number): void {
     const summary = formatToolResult(toolName, result);
     let matched = false;
+    let matchedCallId: string | undefined;
     const toolSteps = this.state.toolSteps.map((step) => {
       if (!matched && step.status === 'running' && step.toolName === toolName) {
         matched = true;
+        matchedCallId = step.callId;
         return {
           ...step,
           status: (isError ? 'error' : 'done') as 'done' | 'error',
@@ -1086,6 +1105,13 @@ export class CLIChannel extends BaseChannel {
       return step;
     });
     this.update({ toolSteps });
+    // Attribution commit: a file-tool call that finished successfully actually
+    // mutated the tree; a failed one did not (errors surface in the step list).
+    if (matchedCallId) {
+      const path = this.pendingTurnFiles.get(matchedCallId);
+      this.pendingTurnFiles.delete(matchedCallId);
+      if (!isError && path) this.committedTurnFiles.add(path);
+    }
   }
 
   sendCompletion(elapsedMs: number, stepCount: number, meta?: CompletionMeta, outcome?: 'complete' | 'steps-paused', verificationNote?: string): void {
@@ -1103,25 +1129,24 @@ export class CLIChannel extends BaseChannel {
     let content = outcome === 'steps-paused'
       ? STEPS_PAUSED_BANNER
       : `Task complete · ${parts}`;
-    // AUTO shares execute-class display semantics (file-change summaries,
-    // the no-changes honesty banner). The no-changes rewrite requires git
-    // evidence — in a non-git directory collectMercuryCodeChanges() always
-    // returns [] and would falsely claim "no file changes" even when files
-    // were created.
+    // File changes are SMART-CONDITIONAL, never repo-wide git status:
+    // - The list attributes ONLY files the turn's own file-tool calls
+    //   (write/create/edit/delete) actually mutated — a general chat turn
+    //   (question, review, planning) touches no files, so no file section,
+    //   no diff rows, no "next steps" — the banner stays clean.
+    // - Pre-existing uncommitted changes in the repo are never attributed to
+    //   this task (the old behavior listed all of them on every banner).
     const canVerifyChanges = this.state.mode === 'mercury-code'
       && (this.state.programmingMode === 'execute' || this.state.programmingMode === 'auto')
       && this.state.mercuryCode?.git.branch !== 'no-git';
-    const fileChanges = canVerifyChanges
-      ? this.collectMercuryCodeChanges()
+    const fileChanges = canVerifyChanges && this.committedTurnFiles.size > 0
+      ? this.collectMercuryCodeChanges([...this.committedTurnFiles])
       : undefined;
     if (content.startsWith('Task complete') && fileChanges && fileChanges.length === 0) {
       content = NO_CHANGES_BANNER + (parts ? ` · ${parts}` : '');
     }
-    // End-of-task summary: what was done (a few bullets from the plan or the
-    // tool steps), how many files changed (paths render below as the banner's
-    // file rows, capped at TASK_SUMMARY_FILE_LIMIT), and what the developer
-    // might need to do next. The developer reads this instead of diffing
-    // manually.
+    // End-of-task summary — files first (the developer's top question), then
+    // what was done, then the next steps.
     if (fileChanges && fileChanges.length > 0) {
       const planSteps = (this.state.planProgress ?? []).filter((s) => s.status === 'done').map((s) => s.label);
       const doneSteps = planSteps.length > 0
@@ -1142,7 +1167,9 @@ export class CLIChannel extends BaseChannel {
       content,
       timestamp: Date.now(),
       completionMeta: meta,
-      fileChanges,
+      // File paths are inlined at the top of the summary text (above);
+      // attaching them again here would duplicate the rows in the transcript.
+      fileChanges: undefined,
     };
     this.trimAndSetMessages([...this.state.chatMessages, msg], {
       isThinking: false,
@@ -1192,23 +1219,29 @@ export class CLIChannel extends BaseChannel {
     this.update({ planProgress: normalized });
   }
 
-  private collectMercuryCodeChanges(): FileChangeSummary[] {
+  /**
+   * Stats for file changes, scoped to the given paths when provided (per-turn
+   * attribution) — repo-wide git status is never shown on the banner. Deleted
+   * or modified tracked files come from numstat; untracked files count as new.
+   */
+  private collectMercuryCodeChanges(paths?: string[]): FileChangeSummary[] {
     const cwd = this.state.mercuryCode?.cwd;
     if (!cwd) return [];
+    const scopeFilter = (filePath: string): boolean => !paths || paths.includes(filePath);
 
     const changes = new Map<string, FileChangeSummary>();
     try {
       let output = '';
       try {
-        output = execFileSync('git', ['diff', '--numstat', 'HEAD', '--'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        output = execFileSync('git', ['diff', '--numstat', 'HEAD', '--', ...(paths ?? [])], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
       } catch {
-        output = execFileSync('git', ['diff', '--numstat', '--'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        output = execFileSync('git', ['diff', '--numstat', '--', ...(paths ?? [])], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
       }
       for (const line of output.split('\n')) {
         if (!line.trim()) continue;
         const [addedRaw, removedRaw, ...pathParts] = line.split('\t');
         const filePath = pathParts.join('\t');
-        if (!filePath) continue;
+        if (!filePath || !scopeFilter(filePath)) continue;
         changes.set(filePath, {
           path: filePath,
           added: addedRaw === '-' ? null : Number.parseInt(addedRaw, 10) || 0,
@@ -1216,12 +1249,14 @@ export class CLIChannel extends BaseChannel {
         });
       }
     } catch {
-      return [];
+      if (!paths) return [];
+      // A scoped diff that fails still allows the untracked pass below.
     }
 
     try {
       const untracked = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
       for (const filePath of untracked.split('\n').filter(Boolean)) {
+        if (!scopeFilter(filePath)) continue;
         if (changes.has(filePath)) continue;
         try {
           const data = fs.readFileSync(path.join(cwd, filePath));
@@ -1235,6 +1270,7 @@ export class CLIChannel extends BaseChannel {
       }
     } catch {
       // A tracked diff is still useful when untracked-file discovery fails.
+      if (!paths) return [...changes.values()].sort((a, b) => a.path.localeCompare(b.path));
     }
 
     return [...changes.values()].sort((a, b) => a.path.localeCompare(b.path));
@@ -2253,6 +2289,9 @@ export class CLIChannel extends BaseChannel {
   }
 
   sendUserMessage(content: string): void {
+    // New turn → reset file-change attribution (the buffer is per-turn).
+    this.pendingTurnFiles.clear();
+    this.committedTurnFiles.clear();
     const userMsg: ChatMessage = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       role: 'user',

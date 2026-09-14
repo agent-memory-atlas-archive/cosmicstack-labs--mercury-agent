@@ -126,7 +126,7 @@ describe('Mercury Code terminal modes', () => {
     expect(writes.join('')).not.toContain('\x1b[?1006h');
   });
 
-  it('adds per-file git statistics to execute-mode completion', () => {
+  it('adds per-file git statistics to execute-mode completion — attributed to the turn’s own file tools', () => {
     vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
     const cwd = mkdtempSync(join(tmpdir(), 'mercury-code-'));
     try {
@@ -139,14 +139,25 @@ describe('Mercury Code terminal modes', () => {
 
       const channel = new CLIChannel();
       channel.enterMercuryCode(cwd, 'test');
-      channel.setProgrammingStatus('execute', cwd);
+      // The turn's file-tool calls mutate the tree; a failed one does not.
+      void channel.sendToolEvent('create_file', { path: 'new.txt' }, 'call-1');
+      channel.completeToolEvent('create_file', { result: 'Created new.txt' }, false);
+      void channel.sendToolEvent('edit_file', { path: 'tracked.txt' }, 'call-2');
+      channel.completeToolEvent('edit_file', { result: 'Edited tracked.txt' }, false);
+      void channel.sendToolEvent('edit_file', { path: 'ghost.txt' }, 'call-2');
+      channel.completeToolEvent('edit_file', { result: '⚠ permission denied' }, true);
+
       channel.sendCompletion(1200, 2);
 
       const completion = channel.getTuiState().chatMessages.at(-1);
-      expect(completion?.fileChanges).toEqual([
-        { path: 'new.txt', added: 2, removed: 0 },
-        { path: 'tracked.txt', added: 1, removed: 0 },
-      ]);
+      // Files at the top, scoped to what the turn's tools actually mutated:
+      // new.txt (created) and tracked.txt (edited); the FAILED ghost.txt edit
+      // and any pre-existing uncommitted repo changes are NOT attributed.
+      expect(completion?.content).toContain('**Changes** · 2 files');
+      expect(completion?.content).toContain('  ↳ new.txt · +2 −0');
+      expect(completion?.content).toContain('  ↳ tracked.txt · +1 −0');
+      expect(completion?.content).not.toContain('ghost.txt');
+      expect(completion?.fileChanges).toBeUndefined(); // no duplicate rows
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
