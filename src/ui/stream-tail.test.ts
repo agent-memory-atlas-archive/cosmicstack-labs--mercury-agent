@@ -145,8 +145,9 @@ describe('streaming tail live-region integration', () => {
     expect(app).toContain('export function streamTailRowCap(terminalRows: number)');
     expect(app).toContain('const tailCap = streamTailRowCap(rows)');
     expect(app).toContain("kind: 'spacer' as const, role: 'system' as const, text: ''");
-    // Live tail renders through the markdown pipeline, on the bounded slice.
-    expect(app).toContain('buildStreamTailLines(streamingMessage, contentWidth');
+    // Live tail renders through the markdown pipeline, on the bounded slice —
+    // now the UNSETTLED REMAINDER (settled blocks flush into <Static> mid-stream).
+    expect(app).toContain('buildStreamTailLines(remainderMessage, contentWidth');
     // Forbidden patterns: the removed in-app viewport machinery.
     expect(app).not.toContain('getViewportWindow(totalWithTail');
     expect(app).not.toContain('wordmarkOnScreen');

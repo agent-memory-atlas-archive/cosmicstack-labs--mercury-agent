@@ -8,7 +8,7 @@ import type { ProgrammingModeState } from '../core/programming-mode.js';
 import { renderMarkdown } from '../utils/markdown.js';
 import { highlightCodeBlock } from '../utils/highlight.js';
 import { normalizeTerminalText, getViewportWindow } from './terminal-viewport.js';
-import { buildMercuryMessageLines, buildMercuryBrandLines, buildStreamTailLines, type MercuryTranscriptLine } from './mercury-transcript.js';
+import { buildMercuryMessageLines, buildMercuryBrandLines, buildStreamTailLines, parseChunkIndex, splitFinalMessage, splitStreamingMessage, type MercuryTranscriptLine } from './mercury-transcript.js';
 import { PLAYER_CONTROLS, formatNowPlaying } from '../spotify/ui.js';
 import type { SpotifyClient } from '../spotify/client.js';
 import type { SubAgentStatus } from '../types/agent.js';
@@ -2561,7 +2561,10 @@ function MercuryBrandBlock({ brandLines }: { brandLines: MercuryTranscriptLine[]
 }
 
 function MercuryMessageBlock({ message, width }: { message: ChatMessage; width: number }): React.ReactNode {
-  const lines = buildMercuryMessageLines(message, width);
+  // Progressive-chunk items carry ids like `${msgId}#c<i>`; only chunk 0
+  // renders the MERCURY/YOU role header — continuation chunks flow on.
+  const chunkIndex = parseChunkIndex(message.id);
+  const lines = buildMercuryMessageLines(message, width, { showHeader: chunkIndex == null || chunkIndex === 0 });
   return (
     <Box flexDirection="column" flexShrink={0}>
       {lines.map((line) => <MercuryTranscriptRow key={line.key} line={line} />)}
@@ -2619,6 +2622,25 @@ export function MercuryCodeView({
   // arithmetic (log-update) never changes the region's line count, which is
   // what made the user's scroll position churn ("takes me back") while a
   // response streamed. Released when the message finalizes into <Static>.
+  // Progressive flush bookkeeping: ids that streamed through settled-chunk
+  // <Static> items this session. When such a message finalizes it must KEEP
+  // its chunk representation (identical item keys) — rendering it as one
+  // whole-message item would re-print blocks <Static> already emitted.
+  const streamedIdsRef = React.useRef<Set<string>>(new Set());
+
+  // Settled markdown blocks of the streaming message, flushed into <Static>
+  // as they complete (blank-line-terminated paragraph, closed code fence).
+  // <Static> prints each new item exactly once, so the document builds
+  // top-to-bottom in scrollback during the stream; only the unsettled
+  // remainder renders in the live tail below. Bookkeeping is ref-based like
+  // the tail throttle below (React state would loop).
+  const streamingChunks = React.useMemo(() => {
+    if (!streamingMessage) return { chunks: [] as ChatMessage[], remainderStart: 0 };
+    streamedIdsRef.current.add(streamingMessage.id);
+    return splitStreamingMessage(streamingMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ref bookkeeping, not state
+  }, [streamingMessage]);
+
   const tailRef = React.useRef<null | { id: string; at: number; contentLength: number; lines: MercuryTranscriptLine[] }>(null);
   const tailCap = streamTailRowCap(rows);
   const streamTail = React.useMemo(() => {
@@ -2631,11 +2653,15 @@ export function MercuryCodeView({
     if (cache && cache.id === streamingMessage.id && now - cache.at < 120 && cache.contentLength <= streamingMessage.content.length) {
       return cache.lines;
     }
-    const lines = buildStreamTailLines(streamingMessage, contentWidth, STREAM_TAIL_CHARS, tailCap);
+    // The live tail renders only the unsettled remainder (settled blocks
+    // have already joined <Static> above); the 32KB fence-aligned slice
+    // stays as the safety net for a huge in-progress block.
+    const remainderMessage = { ...streamingMessage, content: streamingMessage.content.slice(streamingChunks.remainderStart) };
+    const lines = buildStreamTailLines(remainderMessage, contentWidth, STREAM_TAIL_CHARS, tailCap);
     tailRef.current = { id: streamingMessage.id, at: now, contentLength: streamingMessage.content.length, lines };
     return lines;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tailCap derives from rows; cache ref holds state
-  }, [streamingMessage, contentWidth, tailCap]);
+  }, [streamingMessage, streamingChunks, contentWidth, tailCap]);
   const paddedStreamTail = React.useMemo(() => {
     if (streamTail.length === 0) return streamTail;
     const pad = tailCap - streamTail.length;
@@ -2655,9 +2681,16 @@ export function MercuryCodeView({
     );
   }
 
+  // <Static> items: brand block, then per-message content. Messages that
+  // streamed through settled chunks keep their chunk items (identical keys —
+  // finalization appends exactly one tail-chunk item); every other message
+  // renders whole, as before.
+  const streamedIds = streamedIdsRef.current;
   const staticItems: Array<string | ChatMessage> = [
     MERCURY_BRAND_ITEM_KEY,
-    ...finalizedMessages.slice(-MAX_STATIC_MESSAGES),
+    ...finalizedMessages.slice(-MAX_STATIC_MESSAGES).flatMap((message) =>
+      streamedIds.has(message.id) ? splitFinalMessage(message) : [message]),
+    ...streamingChunks.chunks,
   ];
 
   // Status bar (single row): a short contextual hint on the left, session

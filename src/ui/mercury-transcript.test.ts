@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from './types.js';
-import { buildMercuryMessageLines, wrapMercuryText } from './mercury-transcript.js';
+import {
+  buildMercuryMessageLines,
+  parseChunkIndex,
+  settledChunkEnds,
+  splitFinalMessage,
+  splitStreamingMessage,
+  wrapMercuryText,
+} from './mercury-transcript.js';
 
 function message(partial: Partial<ChatMessage> = {}): ChatMessage {
   return {
@@ -55,5 +62,113 @@ describe('Mercury Code transcript formatting', () => {
       'src/app.ts  +8 -2',
       'public/logo.png  binary',
     ]);
+  });
+});
+
+const FULL = [
+  '# Refactor Plan',
+  '',
+  '## Overview',
+  'We will split the auth module into three layers.',
+  '',
+  '- **Step one:** extract token verification',
+  '- **Step two:** move session storage to redis',
+  '',
+  '## Details',
+  '',
+  '```ts',
+  "import { verifyToken } from './auth';",
+  'export function guard(req) {',
+  '  return verifyToken(req.headers.authorization);',
+  '}',
+  '```',
+  '',
+  '## Rollout',
+  'Ship behind a flag.',
+].join('\n');
+
+const chunkMessage = (content: string, streaming = false): ChatMessage => ({
+  id: 'm1',
+  role: 'agent',
+  content,
+  timestamp: 1,
+  streaming,
+});
+
+/**
+ * Progressive-flush splitter guards. <Static> prints each item exactly once,
+ * so the chunk keys produced while a message streams must be a strict prefix
+ * of the keys produced by the finalized content — otherwise finalization
+ * re-prints blocks the user already saw (or drops them).
+ */
+describe('settled-chunk splitter (progressive streaming flush)', () => {
+  it('reassembles into the original content exactly', () => {
+    const chunks = splitFinalMessage(chunkMessage(FULL));
+    expect(chunks.map((c) => c.content).join('')).toBe(FULL);
+  });
+
+  it('settled boundaries of every partial stream are a subset of the final boundaries', () => {
+    const fullEnds = settledChunkEnds(FULL);
+    for (let cut = 1; cut < FULL.length; cut++) {
+      for (const end of settledChunkEnds(FULL.slice(0, cut))) {
+        expect(fullEnds).toContain(end);
+      }
+    }
+  });
+
+  it('never settles a boundary inside an open code fence', () => {
+    const unclosed = '```ts\nconst x = 1;\nstill inside the fence';
+    expect(settledChunkEnds(unclosed)).toEqual([]);
+    // A closed fence settles at the closer even without a trailing blank line.
+    expect(settledChunkEnds('```ts\nconst x = 1;\n```\nnext')).toEqual([
+      '```ts\nconst x = 1;\n```\n'.length,
+    ]);
+  });
+
+  it('settles blank-line-terminated blocks only when content resumes after the blank', () => {
+    // Trailing blank line(s) at the stream's current end are NOT a boundary —
+    // more content could still continue the block.
+    expect(settledChunkEnds('para one\n\n')).toEqual([]);
+    expect(settledChunkEnds('para one\n\npara two')).toEqual(['para one\n\n'.length]);
+  });
+
+  it('streaming chunks exclude the unsettled remainder; finalize adds exactly one tail chunk', () => {
+    let streamedIds: string[] = [];
+    for (const cut of [20, 60, 120, FULL.length]) {
+      const content = FULL.slice(0, cut);
+      const { chunks, remainderStart } = splitStreamingMessage(chunkMessage(content, true));
+      streamedIds = chunks.map((c) => c.id); // the last cut's chunk list is the streamed state
+      // Settled chunks + remainder reassemble the streamed content.
+      expect(chunks.map((c) => c.content).join('') + content.slice(remainderStart)).toBe(content);
+    }
+    const finalIds = splitFinalMessage(chunkMessage(FULL)).map((c) => c.id);
+    // Every streamed chunk key must survive into the final list, in order.
+    expect(finalIds.join(',').startsWith(streamedIds.join(','))).toBe(true);
+    // Finalization adds exactly one NEW item (the tail chunk).
+    expect(finalIds.length).toBe(streamedIds.length + 1);
+  });
+
+  it('carries fileChanges only on the last chunk', () => {
+    const fileChanges = [{ path: 'src/a.ts', added: 3, removed: 1 }];
+    const chunks = splitFinalMessage({ ...chunkMessage(FULL), fileChanges });
+    expect(chunks.slice(0, -1).every((c) => c.fileChanges === undefined)).toBe(true);
+    expect(chunks[chunks.length - 1].fileChanges).toEqual(fileChanges);
+  });
+
+  it('renders the role header only on chunk 0', () => {
+    const chunks = splitFinalMessage(chunkMessage(FULL));
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(buildMercuryMessageLines(chunks[0], 76).some((l) => l.kind === 'header')).toBe(true);
+    for (const chunk of chunks.slice(1)) {
+      expect(buildMercuryMessageLines(chunk, 76, { showHeader: false }).some((l) => l.kind === 'header')).toBe(false);
+    }
+    // Whole messages (no #c id) keep the header.
+    expect(parseChunkIndex('m1')).toBeNull();
+    expect(buildMercuryMessageLines(chunkMessage('hello'), 76).some((l) => l.kind === 'header')).toBe(true);
+  });
+
+  it('degenerate inputs: short and empty messages produce exactly one chunk', () => {
+    expect(splitFinalMessage(chunkMessage('short answer')).map((c) => c.id)).toEqual(['m1#c0']);
+    expect(splitFinalMessage(chunkMessage('')).map((c) => c.id)).toEqual(['m1#c0']);
   });
 });
