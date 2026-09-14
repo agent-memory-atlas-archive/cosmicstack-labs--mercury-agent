@@ -1,6 +1,6 @@
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve as pathResolve } from 'node:path';
 import { Command } from 'commander';
 import readline from 'node:readline';
 import chalk from 'chalk';
@@ -2443,6 +2443,25 @@ async function runAgent(isDaemon: boolean = false): Promise<void> {
         try { agent.cancelActiveWork('Mercury Code was exited from the TUI.'); } catch { /* best effort */ }
         process.exit(0);
       });
+      // `mercury code [dir]`: boot straight into the Mercury Code TUI in the
+      // requested (default: current) directory with a FRESH session. The flag
+      // is set by the `code` command action and consumed here, in the
+      // foreground process only (the daemon child ignores it).
+      if (process.env.MERCURY_BOOT_CODE) {
+        const bootDir = process.env.MERCURY_BOOT_CODE === '1' ? process.cwd() : process.env.MERCURY_BOOT_CODE;
+        delete process.env.MERCURY_BOOT_CODE;
+        const fresh = sessions.create();
+        sessions.bind(fresh.id, 'cli', 'current');
+        const activeSession = sessions.get(fresh.id);
+        if (activeSession) bootCli.setCurrentSession(activeSession);
+        agent.programmingMode.setAuto();
+        agent.programmingMode.setProjectContext(bootDir);
+        const entered = bootCli.enterMercuryCode(bootDir, pkgVersion);
+        bootCli.setProgrammingStatus(agent.programmingMode.getState(), agent.programmingMode.getProjectContext());
+        await bootCli.send(entered.ok
+          ? 'Mercury Code active (AUTO). Describe the change — I will plan and build in one flow, confirming with you only before large or consequential changes.'
+          : `Mercury Code could not start: ${entered.message}`);
+      }
     } else {
       await channels.startAll();
     }
@@ -4502,6 +4521,37 @@ serviceCmd
     }
 
     console.log('');
+  });
+
+program
+  .command('code')
+  .description('Open the Mercury Code TUI in a directory (default: current) with a fresh session')
+  .argument('[dir]', 'Directory to work in (defaults to the current one)')
+  .action(async (dirArg?: string) => {
+    const target = dirArg ? pathResolve(dirArg) : process.cwd();
+    if (!existsSync(target) || !statSync(target).isDirectory()) {
+      console.log(chalk.red(`  ✗ Not a directory: ${target}`));
+      console.log('');
+      process.exit(1);
+    }
+    // Consumed by runAgent() in the foreground process (the daemon child
+    // ignores it — only the TUI boots into Mercury Code).
+    process.env.MERCURY_BOOT_CODE = dirArg ? target : '1';
+    if (!isSetupComplete()) {
+      await configure();
+      delete process.env.MERCURY_BOOT_CODE;
+      autoDaemonize();
+      return;
+    }
+    const foreground = getForegroundRuntimeStatus();
+    if (foreground.running && foreground.pid) {
+      console.log(chalk.cyan(`  ⚿ Mercury is already running (PID: ${foreground.pid}) — \`mercury code\` needs its own runtime.`));
+      console.log(chalk.dim('  Stop it first: mercury stop  (or use /code inside the running TUI).'));
+      console.log('');
+      return;
+    }
+    autoDaemonize();
+    await runAgent();
   });
 
 program
