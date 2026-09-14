@@ -35,6 +35,15 @@ const WHATS_NEW: Record<string, ReleaseHighlights> = {
       'The Mercury Code research-mode prompt no longer fires (its questions were pure friction there).',
     ],
   },
+  '1.2.7': {
+    added: [
+      '**AI/ML API provider** — 350+ chat models on one OpenAI-compatible key (`AIMLAPI_API_KEY`), with key validation and model pick in `mercury setup` and the web Providers page.',
+    ],
+    fixed: [
+      '`mercury uninstall` now discovers the local (project) npm install correctly, on every machine — the previous check also assumed a global install existed.',
+      'The bundled ink fixes now apply without patch-package (Termux/patch-package-free installs get the full set: Yoga WASM hygiene, Static identity dedup, freeze gate, live-region guard, diff-rendered live region).',
+    ],
+  },
 };
 
 const REPO_RELEASES_URL = 'https://github.com/cosmicstack-labs/mercury-agent/releases';
