@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, rmSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { getMercuryHome } from '../utils/config.js';
 import type { SkillDiscovery, Skill, SkillMeta } from './types.js';
@@ -207,7 +207,7 @@ export class SkillLoader {
   }
 
   saveSkill(name: string, content: string): string {
-    const skillDir = join(this.skillsDir, name);
+    const skillDir = this.resolveSkillDir(name);
     if (!existsSync(skillDir)) {
       mkdirSync(skillDir, { recursive: true });
     }
@@ -219,6 +219,22 @@ export class SkillLoader {
     logger.info({ skill: name }, 'Skill saved');
     this.discover();
     return skillDir;
+  }
+
+  /**
+   * Resolve a skill name to its directory inside the skills root. Rejects
+   * empty names and names that escape the root (absolute paths, `..`
+   * traversal), so a remote SKILL.md frontmatter `name` cannot cause writes
+   * outside `skillsDir`.
+   */
+  private resolveSkillDir(name: string): string {
+    const trimmed = (name ?? '').trim();
+    const root = resolve(this.skillsDir);
+    const candidate = resolve(root, trimmed);
+    if (!trimmed || candidate === root || !candidate.startsWith(root + sep)) {
+      throw new Error(`Invalid skill name ${JSON.stringify(name)}: resolves outside the skills root`);
+    }
+    return candidate;
   }
 
   getAllSkills(): Array<SkillDiscovery & { active: boolean }> {
