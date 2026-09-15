@@ -33,7 +33,7 @@ providers.post('/api/providers/:name', async (c) => {
   const body = await c.req.json();
   const config = loadConfig();
 
-  const validNames: ProviderName[] = ['aimlapi', 'mercuryCloud', 'openai', 'anthropic', 'deepseek', 'grok', 'atlascloud', 'ollamaCloud', 'ollamaLocal', 'openaiCompat', 'litellm', 'mimo', 'mimoTokenPlan'];
+  const validNames: ProviderName[] = ['aimlapi', 'mercuryCloud', 'openai', 'anthropic', 'deepseek', 'grok', 'atlascloud', 'ollamaCloud', 'ollamaLocal', 'openaiCompat', 'litellm', 'lmStudio', 'mimo', 'mimoTokenPlan'];
   if (!validNames.includes(providerName)) {
     return c.json({ error: 'Unknown provider' }, 400);
   }
@@ -57,8 +57,8 @@ providers.post('/api/providers/:name/test', async (c) => {
     return c.json({ error: 'Provider not found' }, 400);
   }
 
-  // LiteLLM proxies can be keyless - only require baseUrl
-  const needsKey = providerName !== 'litellm' && providerName !== 'ollamaLocal';
+  // LiteLLM proxies, local Ollama, and LM Studio are keyless - only require baseUrl
+  const needsKey = providerName !== 'litellm' && providerName !== 'ollamaLocal' && providerName !== 'lmStudio';
   if (needsKey && !p.apiKey) {
     return c.json({ error: 'No API key configured' }, 400);
   }

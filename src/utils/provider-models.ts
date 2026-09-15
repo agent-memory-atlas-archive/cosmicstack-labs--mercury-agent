@@ -88,6 +88,7 @@ const MIMO_PREFERRED_MODELS = [
 const MIMO_TOKEN_PLAN_PREFERRED_MODELS = MIMO_PREFERRED_MODELS;
 
 const OPENAI_COMPAT_PREFERRED_MODELS = [] as const;
+const LM_STUDIO_PREFERRED_MODELS = [] as const;
 
 const CHATGPT_WEB_PREFERRED_MODELS = [
   'gpt-5.6-sol',
@@ -137,6 +138,7 @@ export function getPreferredModelsForProvider(provider: ProviderName): string[] 
     ollamaLocal: OLLAMA_LOCAL_PREFERRED_MODELS,
     openaiCompat: OPENAI_COMPAT_PREFERRED_MODELS,
     litellm: OPENAI_COMPAT_PREFERRED_MODELS,
+    lmStudio: LM_STUDIO_PREFERRED_MODELS,
     mimo: MIMO_PREFERRED_MODELS,
     mimoTokenPlan: MIMO_TOKEN_PLAN_PREFERRED_MODELS,
     chatgptWeb: CHATGPT_WEB_PREFERRED_MODELS,
@@ -262,6 +264,7 @@ function chooseRecommendedModel(
     mimo: MIMO_PREFERRED_MODELS,
     mimoTokenPlan: MIMO_TOKEN_PLAN_PREFERRED_MODELS,
     chatgptWeb: CHATGPT_WEB_PREFERRED_MODELS,
+    lmStudio: LM_STUDIO_PREFERRED_MODELS,
     githubCopilot: GITHUB_COPILOT_PREFERRED_MODELS,
     litellm: OPENAI_COMPAT_PREFERRED_MODELS,
   };
@@ -306,6 +309,7 @@ export function buildModelCatalog(
     chatgptWeb: CHATGPT_WEB_PREFERRED_MODELS,
     githubCopilot: GITHUB_COPILOT_PREFERRED_MODELS,
     litellm: OPENAI_COMPAT_PREFERRED_MODELS,
+    lmStudio: LM_STUDIO_PREFERRED_MODELS,
   };
 
   const withoutRecommended = filtered.filter((model) => model !== recommendedModel);
@@ -436,6 +440,20 @@ async function fetchOllamaCloudModels(config: ProviderConfig): Promise<ProviderM
   return buildModelCatalog('ollamaCloud', ids, config.model);
 }
 
+async function fetchLmStudioModels(config: ProviderConfig): Promise<ProviderModelCatalog> {
+  const data = await fetchJson<OpenAIModelResponse>(
+    `${trimTrailingSlash(config.baseUrl)}/models`,
+    {},
+    'Mercury could not fetch models from LM Studio. Make sure LM Studio is running and the Developer API is enabled.',
+  );
+
+  const ids = (data.data ?? [])
+    .map((model) => model.id?.trim() ?? '')
+    .filter(Boolean);
+
+  return buildModelCatalog('lmStudio', ids, config.model);
+}
+
 async function fetchOllamaLocalModels(config: ProviderConfig): Promise<ProviderModelCatalog> {
   const data = await fetchJson<OllamaTagsResponse>(
     `${trimTrailingSlash(config.baseUrl)}/tags`,
@@ -560,6 +578,10 @@ export async function fetchProviderModelCatalog(
 
   if (provider === 'openaiCompat' || provider === 'litellm') {
     return fetchOpenAICompatModels(provider, config);
+  }
+
+  if (provider === 'lmStudio') {
+    return fetchLmStudioModels(config);
   }
 
   if (provider === 'mimo') {
