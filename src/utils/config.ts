@@ -68,7 +68,8 @@ export type ProviderName =
   | 'mimo'
   | 'mimoTokenPlan'
   | 'chatgptWeb'
-  | 'githubCopilot';
+  | 'githubCopilot'
+  | 'litellm';
 
 export interface CloudConfig {
   enabled: boolean;
@@ -105,6 +106,7 @@ export interface MercuryConfig {
     mimoTokenPlan: ProviderConfig;
     chatgptWeb: ProviderConfig;
     githubCopilot: ProviderConfig;
+    litellm: ProviderConfig;
   };
   channels: {
     telegram: {
@@ -348,6 +350,13 @@ export function getDefaultConfig(): MercuryConfig {
         baseUrl: '', // dynamic — resolved from Copilot token exchange
         model: getEnv('GITHUB_COPILOT_MODEL', 'gpt-4o'),
         enabled: getEnvBool('GITHUB_COPILOT_ENABLED', false),
+      },
+      litellm: {
+        name: 'litellm',
+        apiKey: getEnv('LITELLM_API_KEY', ''),
+        baseUrl: getEnv('LITELLM_BASE_URL', 'http://localhost:4000/v1'),
+        model: getEnv('LITELLM_MODEL', 'gpt-4o-mini'),
+        enabled: getEnvBool('LITELLM_ENABLED', false),
       },
     },
     channels: {
@@ -666,7 +675,7 @@ export function isProviderConfigured(provider: ProviderConfig): boolean {
   if (provider.name === 'atlascloud') {
     return provider.apiKey.length > 0 && provider.baseUrl.length > 0 && provider.model.length > 0;
   }
-  if (provider.name === 'openaiCompat') {
+  if (provider.name === 'openaiCompat' || provider.name === 'litellm') {
     return provider.baseUrl.length > 0 && provider.model.length > 0;
   }
   if (provider.name === 'chatgptWeb') {

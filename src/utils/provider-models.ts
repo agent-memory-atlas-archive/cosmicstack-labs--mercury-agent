@@ -136,6 +136,7 @@ export function getPreferredModelsForProvider(provider: ProviderName): string[] 
     ollamaCloud: OLLAMA_CLOUD_PREFERRED_MODELS,
     ollamaLocal: OLLAMA_LOCAL_PREFERRED_MODELS,
     openaiCompat: OPENAI_COMPAT_PREFERRED_MODELS,
+    litellm: OPENAI_COMPAT_PREFERRED_MODELS,
     mimo: MIMO_PREFERRED_MODELS,
     mimoTokenPlan: MIMO_TOKEN_PLAN_PREFERRED_MODELS,
     chatgptWeb: CHATGPT_WEB_PREFERRED_MODELS,
@@ -262,6 +263,7 @@ function chooseRecommendedModel(
     mimoTokenPlan: MIMO_TOKEN_PLAN_PREFERRED_MODELS,
     chatgptWeb: CHATGPT_WEB_PREFERRED_MODELS,
     githubCopilot: GITHUB_COPILOT_PREFERRED_MODELS,
+    litellm: OPENAI_COMPAT_PREFERRED_MODELS,
   };
 
   for (const candidate of preferredByProvider[provider]) {
@@ -303,6 +305,7 @@ export function buildModelCatalog(
     mimoTokenPlan: MIMO_TOKEN_PLAN_PREFERRED_MODELS,
     chatgptWeb: CHATGPT_WEB_PREFERRED_MODELS,
     githubCopilot: GITHUB_COPILOT_PREFERRED_MODELS,
+    litellm: OPENAI_COMPAT_PREFERRED_MODELS,
   };
 
   const withoutRecommended = filtered.filter((model) => model !== recommendedModel);
@@ -331,6 +334,8 @@ async function fetchOpenAICompatModels(provider: ProviderName, config: ProviderC
     errorMessage = 'Mercury could not fetch models for this AI/ML API key. Please re-enter it.';
   } else if (provider === 'openaiCompat') {
     errorMessage = 'Mercury could not fetch models from this server. Please check the base URL and try again.';
+  } else if (provider === 'litellm') {
+    errorMessage = 'Mercury could not fetch models from the LiteLLM proxy. Please check the base URL and ensure the proxy is running.';
   } else {
     errorMessage = 'Mercury could not fetch models for this OpenAI key. Please re-enter it.';
   }
@@ -354,7 +359,7 @@ async function fetchOpenAICompatModels(provider: ProviderName, config: ProviderC
       if (provider === 'deepseek') {
         return id.startsWith('deepseek-');
       }
-      if (provider === 'openaiCompat') {
+      if (provider === 'openaiCompat' || provider === 'litellm') {
         return id.length > 0;
       }
       if (provider === 'atlascloud') {
@@ -553,7 +558,7 @@ export async function fetchProviderModelCatalog(
     return fetchOllamaLocalModels(config);
   }
 
-  if (provider === 'openaiCompat') {
+  if (provider === 'openaiCompat' || provider === 'litellm') {
     return fetchOpenAICompatModels(provider, config);
   }
 
