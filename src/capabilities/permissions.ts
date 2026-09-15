@@ -559,6 +559,10 @@ export class PermissionManager {
     // Redirection turns otherwise read-only commands such as cat/echo into writes.
     if (/\d*(?:>{1,2}|<{1,2})|&>/.test(segment)) return false;
     if (/^find\b.*(?:^|\s)-(?:delete|exec|execdir|ok|okdir)\b/.test(segment)) return false;
+    // ``wc --files0-from=<file>`` dereferences paths listed inside ``<file>``
+    // at execution time, so the literal-path gate never sees them and the read
+    // can escape the approved scopes.
+    if (/^wc\b.*(?:^|\s)--files0-from\b/.test(segment)) return false;
     const branchArgs = segment.match(/^git\s+branch(?:\s+(.*))?$/)?.[1]?.trim();
     if (branchArgs && (
       !branchArgs.startsWith('-')

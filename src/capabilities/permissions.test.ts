@@ -103,4 +103,23 @@ describe('PermissionManager remote safety', () => {
     await expect(permissions.checkShellCommand('git branch new-branch')).resolves.toMatchObject({ allowed: false });
     expect(ask).toHaveBeenCalledTimes(6);
   });
+
+  it('does not classify wc --files0-from as a safe read (indirect path deref)', async () => {
+    const permissions = new PermissionManager();
+    const manifest = permissions.getManifest();
+    manifest.capabilities.shell.enabled = true;
+    manifest.capabilities.shell.blocked = [];
+    const ask = vi.fn().mockResolvedValue('no');
+    permissions.onAsk(ask);
+    permissions.setCurrentContext('web', 'cloud-request-1');
+
+    // ``--files0-from`` reads the paths listed inside the file, which the
+    // literal-path gate never inspects at approval time.
+    await expect(permissions.checkShellCommand('wc --files0-from=list0.bin')).resolves.toMatchObject({ allowed: false });
+    await expect(permissions.checkShellCommand('wc --files0-from list0.bin')).resolves.toMatchObject({ allowed: false });
+    await expect(permissions.checkShellCommand('wc -l --files0-from=list0.bin')).resolves.toMatchObject({ allowed: false });
+    // A plain wc read stays auto-approved.
+    await expect(permissions.checkShellCommand('wc -l README.md')).resolves.toMatchObject({ allowed: true });
+    expect(ask).toHaveBeenCalledTimes(3);
+  });
 });
