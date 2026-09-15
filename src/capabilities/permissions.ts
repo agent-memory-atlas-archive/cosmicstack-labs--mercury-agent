@@ -558,11 +558,15 @@ export class PermissionManager {
   private isSafeReadSegment(segment: string): boolean {
     // Redirection turns otherwise read-only commands such as cat/echo into writes.
     if (/\d*(?:>{1,2}|<{1,2})|&>/.test(segment)) return false;
-    if (/^find\b.*(?:^|\s)-(?:delete|exec|execdir|ok|okdir)\b/.test(segment)) return false;
-    // ``wc --files0-from=<file>`` dereferences paths listed inside ``<file>``
-    // at execution time, so the literal-path gate never sees them and the read
-    // can escape the approved scopes.
-    if (/^wc\b.*(?:^|\s)--files0-from\b/.test(segment)) return false;
+    // find's action flags are side-effectful: -exec/-execdir/-ok/-okdir run
+    // arbitrary commands, -fprint/-fprintf write files, and -files0-from
+    // dereferences a path list at execution time (the literal-path gate never
+    // sees those paths).
+    if (/^find\b.*(?:^|\s)-(?:delete|exec|execdir|ok|okdir|fprintf|fprint|files0-from)\b/.test(segment)) return false;
+    // File-list indirection in any safe-read command (wc/du/sort/…): the
+    // paths live inside the referenced file, invisible to the literal-path
+    // gate, so the read can escape the approved scopes.
+    if (/(?:^|\s)--files0-from(?:=|\s|$)/.test(segment)) return false;
     const branchArgs = segment.match(/^git\s+branch(?:\s+(.*))?$/)?.[1]?.trim();
     if (branchArgs && (
       !branchArgs.startsWith('-')

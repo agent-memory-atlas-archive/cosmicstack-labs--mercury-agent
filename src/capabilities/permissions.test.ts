@@ -122,4 +122,27 @@ describe('PermissionManager remote safety', () => {
     await expect(permissions.checkShellCommand('wc -l README.md')).resolves.toMatchObject({ allowed: true });
     expect(ask).toHaveBeenCalledTimes(3);
   });
+
+  it('find -fprint/-fprintf/-files0-from are side-effectful or indirect — require approval', async () => {
+    const permissions = new PermissionManager();
+    const manifest = permissions.getManifest();
+    manifest.capabilities.shell.enabled = true;
+    manifest.capabilities.shell.blocked = [];
+    const ask = vi.fn().mockResolvedValue('no');
+    permissions.onAsk(ask);
+    permissions.setCurrentContext('web', 'cloud-request-1');
+
+    // -fprint/-fprintf WRITE files with an attacker-chosen path — the same
+    // arbitrary-write class the -exec deny covers (issue #110's family).
+    await expect(permissions.checkShellCommand('find . -fprint out.txt')).resolves.toMatchObject({ allowed: false });
+    await expect(permissions.checkShellCommand('find . -fprintf out.txt %p')).resolves.toMatchObject({ allowed: false });
+    // -files0-from dereferences a path list the literal-path gate never sees.
+    await expect(permissions.checkShellCommand('find . -files0-from=list.bin')).resolves.toMatchObject({ allowed: false });
+    // The generic indirection rule covers the other safe-read commands.
+    await expect(permissions.checkShellCommand('du --files0-from=list.bin')).resolves.toMatchObject({ allowed: false });
+    // Plain reads must keep working without a prompt.
+    await expect(permissions.checkShellCommand('find . -maxdepth 1')).resolves.toMatchObject({ allowed: true });
+    await expect(permissions.checkShellCommand('du -sh .')).resolves.toMatchObject({ allowed: true });
+    expect(ask).toHaveBeenCalledTimes(4);
+  });
 });
