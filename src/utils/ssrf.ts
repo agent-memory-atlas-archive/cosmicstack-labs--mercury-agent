@@ -16,12 +16,19 @@ export function isPrivateAddress(ip: string): boolean {
   if (ip.startsWith('fe80:') || ip.startsWith('fc') || ip.startsWith('fd')) return true;
   const v4 = ip.split('.').map((p) => parseInt(p, 10));
   if (v4.length !== 4 || v4.some((p) => Number.isNaN(p))) return Boolean(ip.startsWith('::ffff:'));
-  const [a, b] = v4;
+  const [a, b, c] = v4;
   if (a === 0 || a === 10 || a === 127) return true;
   if (a === 169 && b === 254) return true; // link-local incl. cloud metadata
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;
   if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+  // Special-use / non-global blocks (RFC 6890): benchmarking, IETF protocol
+  // assignments and the TEST-NET ranges. Not globally routable, so not valid
+  // fetch targets.
+  if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15 benchmark
+  if (a === 192 && b === 0 && (c === 0 || c === 2)) return true; // 192.0.0.0/24, 192.0.2.0/24
+  if (a === 198 && b === 51 && c === 100) return true; // 198.51.100.0/24 TEST-NET-2
+  if (a === 203 && b === 0 && c === 113) return true; // 203.0.113.0/24 TEST-NET-3
   if (a >= 224) return true; // multicast + reserved
   return false;
 }
