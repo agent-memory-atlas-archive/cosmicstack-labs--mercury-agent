@@ -104,4 +104,9 @@ describe('assertFetchableTarget', () => {
     await expect(assertFetchableTarget('http://198.18.0.1/')).rejects.toThrow(/private\/internal/);
     await expect(assertFetchableTarget('file:///etc/passwd')).rejects.toThrow(/Blocked scheme/);
   });
+
+  it('accepts a literal public IP without a DNS lookup', async () => {
+    await expect(assertFetchableTarget('https://93.184.216.34/')).resolves.toBeInstanceOf(URL);
+    expect(mockedLookup).not.toHaveBeenCalled();
+  });
 });
