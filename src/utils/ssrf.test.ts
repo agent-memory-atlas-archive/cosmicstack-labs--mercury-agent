@@ -1,5 +1,17 @@
-import { describe, expect, it } from 'vitest';
-import { isPrivateAddress } from './ssrf.js';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+
+vi.mock('node:dns', () => ({ lookup: vi.fn() }));
+
+import { lookup } from 'node:dns';
+import { assertFetchableTarget, isPrivateAddress } from './ssrf.js';
+
+const mockedLookup = vi.mocked(lookup);
+
+function mockDns(addresses: Array<{ address: string; family: number }>) {
+  mockedLookup.mockImplementation(((_hostname: string, _options: unknown, callback: unknown) => {
+    (callback as (err: unknown, addrs: unknown) => void)(null, addresses);
+  }) as never);
+}
 
 describe('isPrivateAddress', () => {
   it('flags loopback, private, link-local and CGNAT blocks', () => {
@@ -37,6 +49,22 @@ describe('isPrivateAddress', () => {
     }
   });
 
+  it('flags IPv6 special-use blocks', () => {
+    for (const ip of [
+      'fe80::1', // link-local fe80::/10
+      'febf::1',
+      'fec0::1', // site-local fec0::/10 (deprecated)
+      'feff::1',
+      'fc00::1', // unique local fc00::/7
+      'fd12:3456:789a::1',
+      'ff02::1', // multicast ff00::/8
+      '2001:db8::1', // documentation 2001:db8::/32
+      '::ffff:10.0.0.1', // v4-mapped private
+    ]) {
+      expect(isPrivateAddress(ip), ip).toBe(true);
+    }
+  });
+
   it('allows ordinary public addresses', () => {
     for (const ip of [
       '8.8.8.8',
@@ -45,8 +73,40 @@ describe('isPrivateAddress', () => {
       '172.32.0.1',
       '198.20.0.1',
       '203.0.114.1',
+      '2606:4700:4700::1111',
+      '2001:4860:4860::8888',
     ]) {
       expect(isPrivateAddress(ip), ip).toBe(false);
     }
+  });
+});
+
+describe('assertFetchableTarget', () => {
+  beforeEach(() => {
+    mockedLookup.mockReset();
+  });
+
+  it('rejects a hostname whose DNS answers mix public and private records', async () => {
+    mockDns([
+      { address: '93.184.216.34', family: 4 },
+      { address: '10.0.0.5', family: 4 },
+    ]);
+    await expect(assertFetchableTarget('http://mixed.example')).rejects.toThrow(/private\/internal/);
+  });
+
+  it('accepts an all-public hostname', async () => {
+    mockDns([{ address: '93.184.216.34', family: 4 }]);
+    await expect(assertFetchableTarget('http://public.example')).resolves.toBeInstanceOf(URL);
+  });
+
+  it('rejects literal private hosts and non-http(s) schemes', async () => {
+    await expect(assertFetchableTarget('http://127.0.0.1/')).rejects.toThrow(/private\/internal/);
+    await expect(assertFetchableTarget('http://198.18.0.1/')).rejects.toThrow(/private\/internal/);
+    await expect(assertFetchableTarget('file:///etc/passwd')).rejects.toThrow(/Blocked scheme/);
+  });
+
+  it('accepts a literal public IP without a DNS lookup', async () => {
+    await expect(assertFetchableTarget('https://93.184.216.34/')).resolves.toBeInstanceOf(URL);
+    expect(mockedLookup).not.toHaveBeenCalled();
   });
 });
