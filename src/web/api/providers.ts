@@ -57,8 +57,8 @@ providers.post('/api/providers/:name/test', async (c) => {
     return c.json({ error: 'Provider not found' }, 400);
   }
 
-  // LiteLLM proxies, local Ollama, and LM Studio are keyless - only require baseUrl
-  const needsKey = providerName !== 'litellm' && providerName !== 'ollamaLocal' && providerName !== 'lmStudio';
+  // LiteLLM proxies, local Ollama, LM Studio, and Atomic Chat are keyless - only require baseUrl
+  const needsKey = providerName !== 'litellm' && providerName !== 'ollamaLocal' && providerName !== 'lmStudio' && providerName !== 'atomicChat';
   if (needsKey && !p.apiKey) {
     return c.json({ error: 'No API key configured' }, 400);
   }

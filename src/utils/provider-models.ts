@@ -137,6 +137,7 @@ export function getPreferredModelsForProvider(provider: ProviderName): string[] 
     atlascloud: ATLASCLOUD_PREFERRED_MODELS,
     ollamaCloud: OLLAMA_CLOUD_PREFERRED_MODELS,
     ollamaLocal: OLLAMA_LOCAL_PREFERRED_MODELS,
+    atomicChat: ATOMIC_CHAT_PREFERRED_MODELS,
     openaiCompat: OPENAI_COMPAT_PREFERRED_MODELS,
     litellm: OPENAI_COMPAT_PREFERRED_MODELS,
     lmStudio: LM_STUDIO_PREFERRED_MODELS,
@@ -579,7 +580,7 @@ export async function fetchProviderModelCatalog(
     return fetchOllamaLocalModels(config);
   }
 
-  if (provider === 'openaiCompat' || provider === 'litellm' || provider === 'atomicChat' || provider === 'lmStudio') {
+  if (provider === 'openaiCompat' || provider === 'litellm' || provider === 'atomicChat') {
     return fetchOpenAICompatModels(provider, config);
   }
 
