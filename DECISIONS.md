@@ -105,3 +105,8 @@
   - Increase cap to 200 — more headroom but still arbitrary
   - Tier-based caps (e.g., 20 durable + 30 active) — more complex, harder to tune
 - **Consequence**: No memory is ever permanently lost to time. The subconscious layer archives everything, and the recall mechanism surfaces dormant memories when context demands it. The 30-day threshold is configurable and the recall scoring weights can be tuned based on real-world usage.
+## ADR-012: Atomic Chat as a first-class local provider
+
+- **Context**: PR #90 (yanalialiuk) adds Atomic Chat (atomic.chat) as a local OpenAI-compatible provider, defaulting to `http://127.0.0.1:1337/v1`, mirroring the Ollama Local pattern. Security review found no vulnerabilities: no new dependencies, no secrets, base URL passes `validateBaseUrl`, model discovery reuses the existing OpenAI-compat catalog fetch, and the web server that accepts `baseUrl` binds to 127.0.0.1 only — same by-design trust boundary as `ollamaLocal`/`lmStudio`.
+- **Decision**: Accept and maintain. Adapted on merge: `atomicChat` routed through `fetchOpenAICompatModels` (without dragging `lmStudio` off its dedicated fetcher), registered in `getPreferredModelsForProvider`, and treated as keyless in the web provider test endpoint. Merge commit authored by Mercury, feature commit retains the original author.
+- **Consequence**: Mercury now supports four keyless local providers (Ollama Local, LM Studio, LiteLLM, Atomic Chat). Maintenance owned by Mercury: keep `atomicChat` wired into any new provider surface (config, registry, web API, catalogs, docs), and revisit the SSRF posture if the web server is ever exposed beyond 127.0.0.1.
