@@ -163,6 +163,8 @@ describe('PermissionManager remote safety', () => {
     await expect(permissions.checkShellCommand('echo $TOKEN')).resolves.toMatchObject({ allowed: false });
     // Home shorthands expand after the check too.
     await expect(permissions.checkShellCommand('cat ~/secret.txt')).resolves.toMatchObject({ allowed: false });
+    // ANSI-C quoting expands hex/unicode escapes post-check (same class as #95).
+    await expect(permissions.checkShellCommand("head $'\\x2fetc\\x2fpasswd'")).resolves.toMatchObject({ allowed: false });
     // A plain read relative to cwd stays auto-approved.
     await expect(permissions.checkShellCommand('head file.txt')).resolves.toMatchObject({ allowed: true });
   });

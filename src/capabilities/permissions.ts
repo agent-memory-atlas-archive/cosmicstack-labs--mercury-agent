@@ -571,7 +571,8 @@ export class PermissionManager {
     // resolve outside the workspace (`head $HOME/secret`, CVE-2026-28463) or
     // disclose environment values (`echo $TOKEN`). Require approval for any
     // segment that relies on variable expansion or a home shorthand.
-    if (/\$[{(0-9A-Za-z_]|`/.test(segment)) return false;
+    // ANSI-C quoting ($'\x2f...') also expands post-check — caught by the same class.
+    if (/\$[{(0-9A-Za-z_']|`/.test(segment)) return false;
     if (/(?:^|\s)~[A-Za-z0-9_-]*(?:\/|$)/.test(segment)) return false;
     const branchArgs = segment.match(/^git\s+branch(?:\s+(.*))?$/)?.[1]?.trim();
     if (branchArgs && (
