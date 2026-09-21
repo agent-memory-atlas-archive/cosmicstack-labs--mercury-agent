@@ -580,6 +580,13 @@ export class PermissionManager {
     // paths live inside the referenced file, invisible to the literal-path
     // gate, so the read can escape the approved scopes.
     if (/(?:^|\s)--files0-from(?:=|\s|$)/.test(segment)) return false;
+    // Shell expansion runs after this check, so a "safe read" can still
+    // resolve outside the workspace (`head $HOME/secret`, CVE-2026-28463) or
+    // disclose environment values (`echo $TOKEN`). Require approval for any
+    // segment that relies on variable expansion or a home shorthand.
+    // ANSI-C quoting ($'\x2f...') also expands post-check — caught by the same class.
+    if (/\$[{(0-9A-Za-z_']|`/.test(segment)) return false;
+    if (/(?:^|\s)~[A-Za-z0-9_-]*(?:\/|$)/.test(segment)) return false;
     const branchArgs = segment.match(/^git\s+branch(?:\s+(.*))?$/)?.[1]?.trim();
     if (branchArgs && (
       !branchArgs.startsWith('-')
