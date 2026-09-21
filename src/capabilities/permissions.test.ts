@@ -145,4 +145,25 @@ describe('PermissionManager remote safety', () => {
     await expect(permissions.checkShellCommand('du -sh .')).resolves.toMatchObject({ allowed: true });
     expect(ask).toHaveBeenCalledTimes(4);
   });
+
+  it('requires approval for safe-read commands that rely on shell expansion', async () => {
+    const permissions = new PermissionManager();
+    const manifest = permissions.getManifest();
+    manifest.capabilities.shell.enabled = true;
+    manifest.capabilities.shell.blocked = [];
+    const ask = vi.fn().mockResolvedValue('no');
+    permissions.onAsk(ask);
+    permissions.setCurrentContext('web', 'cloud-request-1');
+
+    // $HOME/… expands to a path the literal gate never saw (CVE-2026-28463).
+    await expect(permissions.checkShellCommand('head $HOME/secret.txt')).resolves.toMatchObject({ allowed: false });
+    // ${…} and command substitution are the same class.
+    await expect(permissions.checkShellCommand('cat ${HOME}/secret.txt')).resolves.toMatchObject({ allowed: false });
+    // $VAR discloses environment values (issue #76/#80).
+    await expect(permissions.checkShellCommand('echo $TOKEN')).resolves.toMatchObject({ allowed: false });
+    // Home shorthands expand after the check too.
+    await expect(permissions.checkShellCommand('cat ~/secret.txt')).resolves.toMatchObject({ allowed: false });
+    // A plain read relative to cwd stays auto-approved.
+    await expect(permissions.checkShellCommand('head file.txt')).resolves.toMatchObject({ allowed: true });
+  });
 });
