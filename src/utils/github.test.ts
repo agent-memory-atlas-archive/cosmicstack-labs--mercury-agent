@@ -10,9 +10,13 @@ describe('resolveGitHubApiUrl', () => {
     expect(resolveGitHubApiUrl('https://api.github.com/repos/o/r')).toBe('https://api.github.com/repos/o/r');
   });
 
+  it('rejects plain http even for api.github.com (token must not transit plaintext)', () => {
+    expect(() => resolveGitHubApiUrl('http://api.github.com/repos/o/r')).toThrow(/requires https/);
+  });
+
   it('rejects absolute URLs to other hosts so the token cannot leak', () => {
     expect(() => resolveGitHubApiUrl('https://evil.example/steal')).toThrow(/restricted to api\.github\.com/);
-    expect(() => resolveGitHubApiUrl('http://127.0.0.1:9/x')).toThrow(/restricted to api\.github\.com/);
+    expect(() => resolveGitHubApiUrl('https://127.0.0.1:9/x')).toThrow(/restricted to api\.github\.com/);
     // userinfo tricks must not bypass the host check
     expect(() => resolveGitHubApiUrl('https://api.github.com@evil.example/')).toThrow(/restricted to api\.github\.com/);
   });
