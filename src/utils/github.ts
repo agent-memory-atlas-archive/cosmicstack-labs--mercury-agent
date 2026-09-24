@@ -40,6 +40,9 @@ export function resolveGitHubApiUrl(path: string): string {
     } catch {
       throw new Error(`Invalid GitHub API URL: ${path}`);
     }
+    if (url.protocol !== 'https:') {
+      throw new Error(`github_api requires https; refusing ${url.protocol}//${url.hostname}`);
+    }
     if (url.hostname.toLowerCase() !== GITHUB_API_HOST) {
       throw new Error(
         `github_api is restricted to ${GITHUB_API_HOST}; refusing to send the GitHub token to ${url.hostname}`,
